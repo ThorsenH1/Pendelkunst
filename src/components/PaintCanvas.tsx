@@ -12,6 +12,8 @@ import { drawThickStroke, drawSplashDot, getSymmetryTransforms } from '@/lib/pai
 const PAINT_SIZE = 2048;
 const STEPS_PER_FRAME = 14;
 const DT = 0.012;
+/** Physics→canvas scale: pos [-1,1] maps to canvas [0.05, 0.95]. */
+const SCALE = 0.45;
 
 interface Props {
   settings: SimulationSettings;
@@ -157,16 +159,16 @@ export default function PaintCanvas({
   }, [loadImage, blit, onImageLoaded]);
 
   // ── Click to set drop position (idle only) ──
-  // Canvas rendering: canvasNorm = 0.5 + physPos * 0.3
-  // Inverse: physPos = (canvasNorm - 0.5) / 0.3
+  // Canvas rendering: canvasNorm = 0.5 + physPos * SCALE
+  // Inverse: physPos = (canvasNorm - 0.5) / SCALE
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (stateRef.current !== 'idle' && stateRef.current !== 'done') return;
     const rect = displayRef.current?.getBoundingClientRect();
     if (!rect) return;
     const canvasNormX = (e.clientX - rect.left) / rect.width;
     const canvasNormY = (e.clientY - rect.top) / rect.height;
-    const physX = (canvasNormX - 0.5) / 0.3;
-    const physY = (canvasNormY - 0.5) / 0.3;
+    const physX = (canvasNormX - 0.5) / SCALE;
+    const physY = (canvasNormY - 0.5) / SCALE;
     const clamped: DropPosition = {
       x: Math.max(-1.5, Math.min(1.5, physX)),
       y: Math.max(-1.5, Math.min(1.5, physY)),
@@ -180,8 +182,8 @@ export default function PaintCanvas({
     if (!rect) return;
     const canvasNormX = (e.clientX - rect.left) / rect.width;
     const canvasNormY = (e.clientY - rect.top) / rect.height;
-    const physX = (canvasNormX - 0.5) / 0.3;
-    const physY = (canvasNormY - 0.5) / 0.3;
+    const physX = (canvasNormX - 0.5) / SCALE;
+    const physY = (canvasNormY - 0.5) / SCALE;
     setHoveredDrop({
       x: Math.max(-1.5, Math.min(1.5, physX)),
       y: Math.max(-1.5, Math.min(1.5, physY)),
@@ -225,8 +227,8 @@ export default function PaintCanvas({
         const normFlow = Math.min(flowRate / 5, 1);
 
         // Pendulum position on canvas (with canvas motion offset)
-        const cx = 0.5 + pos.x * 0.3 + co.ox;
-        const cy = 0.5 + pos.y * 0.3 + co.oy;
+        const cx = 0.5 + pos.x * SCALE + co.ox;
+        const cy = 0.5 + pos.y * SCALE + co.oy;
 
         for (let h = 0; h < ps.holes.length; h++) {
           const hole = ps.holes[h];
@@ -330,8 +332,8 @@ export default function PaintCanvas({
           const ps = sRef.current.paint;
 
           // Pendulum cursor
-          const ix = (0.5 + pos.x * 0.3 + co.ox) * display.width;
-          const iy = (0.5 + pos.y * 0.3 + co.oy) * display.height;
+          const ix = (0.5 + pos.x * SCALE + co.ox) * display.width;
+          const iy = (0.5 + pos.y * SCALE + co.oy) * display.height;
           ctx.globalAlpha = 0.35;
           ctx.strokeStyle = '#fff';
           ctx.lineWidth = 1.5;
@@ -369,8 +371,8 @@ export default function PaintCanvas({
   // ── Drop position indicator (same coord mapping as physics renderer) ──
   const showDrop = simState === 'idle';
   const dp = settings.dropPosition;
-  const dropPxX = (0.5 + dp.x * 0.3) * canvasSize;
-  const dropPxY = (0.5 + dp.y * 0.3) * canvasSize;
+  const dropPxX = (0.5 + dp.x * SCALE) * canvasSize;
+  const dropPxY = (0.5 + dp.y * SCALE) * canvasSize;
   const dropDist = Math.sqrt(dp.x * dp.x + dp.y * dp.y);
 
   // Throw direction indicator
@@ -446,8 +448,8 @@ export default function PaintCanvas({
               <div
                 className="absolute pointer-events-none w-4 h-4 rounded-full border border-indigo-300/40"
                 style={{
-                  left: (0.5 + hoveredDrop.x * 0.3) * canvasSize - 8,
-                  top: (0.5 + hoveredDrop.y * 0.3) * canvasSize - 8,
+                  left: (0.5 + hoveredDrop.x * SCALE) * canvasSize - 8,
+                  top: (0.5 + hoveredDrop.y * SCALE) * canvasSize - 8,
                 }}
               />
             )}
