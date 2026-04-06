@@ -42,6 +42,7 @@ export default function PaintCanvas({
   const totalFlow = useRef(0);
   const prevHolePx = useRef<Map<number, { x: number; y: number }>>(new Map());
   const prevHoleNorm = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const wasRunning = useRef(false);
   const [canvasSize, setCanvasSize] = useState(600);
   const [dpr, setDpr] = useState(1);
   const [hoveredDrop, setHoveredDrop] = useState<DropPosition | null>(null);
@@ -108,7 +109,7 @@ export default function PaintCanvas({
     ctx.fillRect(0, 0, PAINT_SIZE, PAINT_SIZE);
   }, []);
 
-  // ── Reset on idle ──
+  // ── Reset on idle (full) or prepare new layer (done→running) ──
   useEffect(() => {
     if (simState === 'idle') {
       tRef.current = 0;
@@ -121,7 +122,18 @@ export default function PaintCanvas({
       prevHoleNorm.current.clear();
       clearPaint();
       blit();
+      wasRunning.current = false;
+    } else if (simState === 'running' && wasRunning.current) {
+      // New layer: reset simulation state but keep canvas + points
+      tRef.current = 0;
+      totalFlow.current = 0;
+      particles.current = [];
+      prevPos.current = null;
+      prevVel.current = { vx: 0, vy: 0 };
+      prevHolePx.current.clear();
+      prevHoleNorm.current.clear();
     }
+    if (simState === 'running') wasRunning.current = true;
   }, [simState, clearPaint, blit, pointsRef]);
 
   // ── Repaint background when idle ──
@@ -148,7 +160,7 @@ export default function PaintCanvas({
   // Canvas rendering: canvasNorm = 0.5 + physPos * 0.3
   // Inverse: physPos = (canvasNorm - 0.5) / 0.3
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (stateRef.current !== 'idle') return;
+    if (stateRef.current !== 'idle' && stateRef.current !== 'done') return;
     const rect = displayRef.current?.getBoundingClientRect();
     if (!rect) return;
     const canvasNormX = (e.clientX - rect.left) / rect.width;
@@ -163,7 +175,7 @@ export default function PaintCanvas({
   }, [onSettingsChange]);
 
   const handleCanvasMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (stateRef.current !== 'idle') { setHoveredDrop(null); return; }
+    if (stateRef.current !== 'idle' && stateRef.current !== 'done') { setHoveredDrop(null); return; }
     const rect = displayRef.current?.getBoundingClientRect();
     if (!rect) return;
     const canvasNormX = (e.clientX - rect.left) / rect.width;

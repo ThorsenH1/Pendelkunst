@@ -45,7 +45,7 @@ export default function ControlPanel({
   settings, onSettingsChange, simState, onSimStateChange,
   onExport, onSave, onShowGallery, saveMsg,
 }: Props) {
-  const canEdit = simState === 'idle';
+  const canEdit = simState === 'idle' || simState === 'done';
 
   function update(partial: Partial<SimulationSettings>) {
     onSettingsChange({ ...settings, ...partial });
@@ -356,6 +356,12 @@ export default function ControlPanel({
         )}
         {simState === 'done' && (
           <div className="text-center py-2 text-emerald-400 font-medium">✓ Maleriet er ferdig!</div>
+        )}
+        {simState === 'done' && (
+          <button onClick={() => onSimStateChange('running')}
+            className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors">
+            🎨 Nytt lag — mal videre
+          </button>
         )}
         {(simState === 'paused' || simState === 'done') && (
           <button onClick={onSave}
