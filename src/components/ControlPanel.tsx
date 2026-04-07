@@ -1,6 +1,6 @@
 'use client';
 
-import { SimulationSettings, SimulationState, HoleConfig, CanvasMotionMode, ThrowMode } from '@/lib/types';
+import { SimulationSettings, SimulationState, HoleConfig, CanvasMotionMode, ThrowMode, BrushType } from '@/lib/types';
 import { presets, createDefaultSettings } from '@/lib/presets';
 
 interface Props {
@@ -249,7 +249,34 @@ export default function ControlPanel({
       {/* Paint settings */}
       <Section title="Maling">
         <div className="mb-3">
-          <span className="text-gray-300 text-sm block mb-2">Antall hull i bøtta</span>
+          <span className="text-gray-300 text-sm block mb-2">Verktøy</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {([
+              ['bucket', '🪣', 'Bøtte', 'Tykt, blobaktig, renner'],
+              ['fine-brush', '🖌️', 'Fin pensel', 'Tynn, elegant, trykkvar'],
+              ['flat-brush', '🖼️', 'Flat pensel', 'Bred, synlige bust'],
+              ['marker', '🖊️', 'Tusj', 'Ren, jevn, gjennomsiktig'],
+              ['drip-stick', '🥢', 'Dryppepinne', 'Ujevn, klatter og striper'],
+              ['squeeze', '🧴', 'Klemflaske', 'Glatt, hevet, jevn'],
+              ['spray', '🎨', 'Spray', 'Finfordelt, sprøytet'],
+            ] as [BrushType, string, string, string][]).map(([type, icon, label, desc]) => (
+              <button key={type}
+                onClick={() => update({ paint: { ...settings.paint, brushType: type } })}
+                disabled={!canEdit}
+                className={`px-2 py-2 rounded-lg text-left transition-colors ${
+                  settings.paint.brushType === type
+                    ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}>
+                <span className="text-sm">{icon}</span>
+                <span className="block text-[11px] font-medium">{label}</span>
+                <span className="block text-[9px] opacity-60">{desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-3">
+          <span className="text-gray-300 text-sm block mb-2">Antall hull</span>
           <div className="flex gap-1.5 flex-wrap">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
               <button key={n} onClick={() => setHoleCount(n)} disabled={!canEdit}

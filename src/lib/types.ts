@@ -29,9 +29,12 @@ export interface HoleConfig {
   thickness: number;
 }
 
+export type BrushType = 'bucket' | 'fine-brush' | 'flat-brush' | 'marker' | 'drip-stick' | 'squeeze' | 'spray';
+
 export interface PaintSettings {
   holes: HoleConfig[];
   baseThickness: number;
+  brushType: BrushType;
   splashEnabled: boolean;
   splashIntensity: number;
   opacity: number;
@@ -81,6 +84,8 @@ export interface PaintPoint {
   color: string;
   opacity: number;
   viscosity?: number;
+  brushType?: BrushType;
+  speed?: number;
 }
 
 export interface SplashParticle {

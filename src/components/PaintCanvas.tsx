@@ -261,7 +261,7 @@ export default function PaintCanvas({
               const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
               const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
               for (let i = 0; i < ts.length; i++) {
-                drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity);
+                drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed);
               }
             }
           }
@@ -273,22 +273,27 @@ export default function PaintCanvas({
             fromX: prevNorm?.x, fromY: prevNorm?.y,
             radius: jr, color: hole.color, opacity,
             viscosity: ps.viscosity,
+            brushType: ps.brushType,
+            speed,
           });
           prevHoleNorm.current.set(h, { x: normX, y: normY });
           totalFlow.current += normFlow * DT * 0.01;
 
-          // Splash particles
+          // Splash particles — power-law sizes, varied angles
           if (ps.splashEnabled && prevPos.current) {
             const sp = shouldSplash(speed, radius, ps.viscosity, ps.splashIntensity);
-            if (sp.splash && Math.random() < 0.3) {
+            if (sp.splash && Math.random() < 0.35) {
               const moveAngle = Math.atan2(vel.vy, vel.vx);
               for (let p = 0; p < sp.particleCount; p++) {
                 const angle = moveAngle + (Math.random() - 0.5) * Math.PI * 1.5;
                 const pv = 0.0003 + Math.random() * sp.maxSpeed * 0.01;
+                // Power-law: many tiny splashes, few large ones
+                const sizePow = Math.pow(Math.random(), 2.5);
+                const splashR = jr * (0.03 + sizePow * 0.35);
                 particles.current.push({
                   x: hx, y: hy, vx: Math.cos(angle) * pv, vy: Math.sin(angle) * pv,
-                  radius: jr * (0.08 + Math.random() * 0.25), color: hole.color, life: 1,
-                  decay: 0.02 + Math.random() * 0.06 + ps.viscosity * 0.03,
+                  radius: splashR, color: hole.color, life: 1,
+                  decay: 0.015 + Math.random() * 0.05 + ps.viscosity * 0.03,
                 });
               }
             }
@@ -307,8 +312,9 @@ export default function PaintCanvas({
           p.life -= p.decay;
           if (p.life > 0) {
             const ppx = p.x * PAINT_SIZE, ppy = p.y * PAINT_SIZE, ppr = p.radius * PAINT_SIZE * p.life;
+            const pvx = p.vx * PAINT_SIZE, pvy = p.vy * PAINT_SIZE;
             for (const tp of getSymmetryTransforms(ppx, ppy, PAINT_SIZE, sym)) {
-              drawSplashDot(paintCtx, tp.x, tp.y, ppr, p.color, p.life * 0.5);
+              drawSplashDot(paintCtx, tp.x, tp.y, ppr, p.color, p.life * 0.5, pvx, pvy, ps.viscosity);
             }
             pointsRef.current.push({ x: p.x, y: p.y, radius: p.radius * p.life * 0.5, color: p.color, opacity: p.life * 0.4 });
             return true;
