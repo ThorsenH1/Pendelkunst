@@ -2,7 +2,7 @@
 
 import { MutableRefObject, useState } from 'react';
 import { PaintPoint, SimulationSettings } from '@/lib/types';
-import { renderPointsHighRes } from '@/lib/painter';
+import { renderPointsHighResAsync } from '@/lib/painter';
 
 interface Props {
   pointsRef: MutableRefObject<PaintPoint[]>;
@@ -23,51 +23,63 @@ export default function ExportDialog({ pointsRef, settings, onClose }: Props) {
   const [fmt, setFmt] = useState<'png' | 'jpeg'>('png');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [progress, setProgress] = useState(0);
 
   async function doExport() {
     setBusy(true);
+    setProgress(0);
     setMsg('Forbereder eksport...');
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 30));
     try {
       const c = document.createElement('canvas');
       c.width = size;
       c.height = size;
       const ctx = c.getContext('2d');
       if (!ctx) throw new Error('Canvas error');
-      setMsg(`Tegner ${pointsRef.current.length.toLocaleString()} strøk...`);
-      await new Promise(r => setTimeout(r, 50));
-      renderPointsHighRes(ctx, pointsRef.current, size, settings.symmetry, settings.backgroundColor);
+
+      setMsg(`Tegner ${pointsRef.current.length.toLocaleString('no-NO')} strøk...`);
+      await renderPointsHighResAsync(
+        ctx,
+        pointsRef.current,
+        size,
+        settings.symmetry,
+        settings.backgroundColor,
+        (f) => setProgress(f),
+      );
+
       setMsg('Konverterer...');
-      await new Promise(r => setTimeout(r, 50));
-      c.toBlob(blob => {
-        if (!blob) { setMsg('Feil'); setBusy(false); return; }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `pendelkunst-${size}px.${fmt}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setMsg('Ferdig!');
-        setTimeout(() => { setBusy(false); onClose(); }, 800);
-      }, fmt === 'png' ? 'image/png' : 'image/jpeg', fmt === 'jpeg' ? 0.95 : undefined);
+      await new Promise((r) => setTimeout(r, 30));
+      const blob: Blob | null = await new Promise((res) =>
+        c.toBlob((b) => res(b), fmt === 'png' ? 'image/png' : 'image/jpeg', fmt === 'jpeg' ? 0.95 : undefined),
+      );
+      if (!blob) throw new Error('Blob error');
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pendelkunst-${size}px.${fmt}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMsg('Ferdig!');
+      setTimeout(() => { setBusy(false); onClose(); }, 700);
     } catch {
-      setMsg('Feil — prøv mindre størrelse');
+      setMsg('Feil — prøv en mindre størrelse');
       setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label="Eksporter maleri">
       <div className="bg-gray-900 rounded-2xl border border-gray-700 max-w-md w-full p-6 shadow-2xl">
         <h2 className="text-xl font-bold text-white mb-1">Eksporter maleri</h2>
-        <p className="text-gray-400 text-sm mb-5">Velg oppløsning for utskrift eller digital bruk</p>
+        <p className="text-gray-400 text-sm mb-5">Eksporten gjengir nøyaktig det du ser på skjermen, i valgt oppløsning.</p>
 
         <div className="space-y-2 mb-5">
-          {SIZES.map(s => (
-            <button key={s.size} onClick={() => setSize(s.size)}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-colors ${
+          {SIZES.map((s) => (
+            <button key={s.size} onClick={() => setSize(s.size)} disabled={busy}
+              className={`w-full text-left px-4 py-3 rounded-lg transition-colors disabled:opacity-50 ${
                 size === s.size
                   ? 'bg-indigo-600/20 border border-indigo-500 text-indigo-300'
                   : 'bg-gray-800 border border-transparent text-gray-300 hover:bg-gray-700'
@@ -79,9 +91,9 @@ export default function ExportDialog({ pointsRef, settings, onClose }: Props) {
         </div>
 
         <div className="flex gap-3 mb-5">
-          {(['png', 'jpeg'] as const).map(f => (
-            <button key={f} onClick={() => setFmt(f)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+          {(['png', 'jpeg'] as const).map((f) => (
+            <button key={f} onClick={() => setFmt(f)} disabled={busy}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
                 fmt === f ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               }`}>
               {f === 'png' ? 'PNG (beste kvalitet)' : 'JPEG (mindre fil)'}
@@ -92,11 +104,19 @@ export default function ExportDialog({ pointsRef, settings, onClose }: Props) {
         <div className="bg-gray-800/50 rounded-lg p-3 mb-5 text-xs text-gray-400">
           <strong className="text-gray-300">Tips:</strong> For veggmaleri, bruk minst 4096px.
           {pointsRef.current.length > 0 && (
-            <span className="block mt-1">Maleriet: {pointsRef.current.length.toLocaleString()} malingsstrøk.</span>
+            <span className="block mt-1">Maleriet: {pointsRef.current.length.toLocaleString('no-NO')} malingsstrøk.</span>
           )}
         </div>
 
-        {busy && msg && <div className="mb-4 text-sm text-indigo-300 text-center animate-pulse">{msg}</div>}
+        {busy && (
+          <div className="mb-4">
+            <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-[width] duration-150"
+                style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+            {msg && <div className="mt-2 text-sm text-indigo-300 text-center">{msg} {progress > 0 && progress < 1 ? `${Math.round(progress * 100)}%` : ''}</div>}
+          </div>
+        )}
 
         <div className="flex gap-3">
           <button onClick={onClose} disabled={busy}

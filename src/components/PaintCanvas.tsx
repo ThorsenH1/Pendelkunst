@@ -7,13 +7,15 @@ import {
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
 } from '@/lib/physics';
-import { drawThickStroke, drawSplashDot, getSymmetryTransforms } from '@/lib/painter';
+import { drawThickStroke, drawSplashDot, getSymmetryTransforms, copySeed } from '@/lib/painter';
 
 const PAINT_SIZE = 2048;
 const STEPS_PER_FRAME = 14;
 const DT = 0.012;
-/** Physics→canvas scale: pos [-1,1] maps to canvas [0.05, 0.95]. */
+/** Physics->canvas scale: pos [-1,1] maps to canvas [0.05, 0.95]. */
 const SCALE = 0.45;
+/** Safety cap: stop a single run before memory/perf degrade (very long pieces). */
+const MAX_POINTS = 350_000;
 
 interface Props {
   settings: SimulationSettings;
@@ -44,12 +46,18 @@ export default function PaintCanvas({
   const totalFlow = useRef(0);
   const prevHolePx = useRef<Map<number, { x: number; y: number }>>(new Map());
   const prevHoleNorm = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const wasRunning = useRef(false);
+  const prevStateRef = useRef<SimulationState>('idle');
+  const seedRef = useRef(1);
   const [canvasSize, setCanvasSize] = useState(600);
   const [dpr, setDpr] = useState(1);
   const [hoveredDrop, setHoveredDrop] = useState<DropPosition | null>(null);
 
-  // Resolve DPR on client only to avoid hydration mismatch
+  const nextSeed = () => {
+    const s = seedRef.current;
+    seedRef.current = (seedRef.current + 1) >>> 0 || 1;
+    return s;
+  };
+
   useEffect(() => { setDpr(window.devicePixelRatio || 1); }, []);
 
   useEffect(() => { sRef.current = settings; }, [settings]);
@@ -111,32 +119,41 @@ export default function PaintCanvas({
     ctx.fillRect(0, 0, PAINT_SIZE, PAINT_SIZE);
   }, []);
 
-  // ── Reset on idle (full) or prepare new layer (done→running) ──
+  // Reset just the per-run simulation state (keeps canvas + accumulated points).
+  const resetRun = useCallback(() => {
+    tRef.current = 0;
+    totalFlow.current = 0;
+    particles.current = [];
+    prevPos.current = null;
+    prevVel.current = { vx: 0, vy: 0 };
+    prevHolePx.current.clear();
+    prevHoleNorm.current.clear();
+  }, []);
+
+  // ── State transitions ──
+  // idle           -> full reset (blank canvas, clear points)
+  // idle -> running -> fresh run
+  // running->paused -> freeze (loop simply stops)
+  // paused->running -> CONTINUE from where it stopped (no reset)
+  // done  ->running -> new layer: reset run but keep canvas + points
   useEffect(() => {
+    const prev = prevStateRef.current;
+
     if (simState === 'idle') {
-      tRef.current = 0;
-      totalFlow.current = 0;
+      resetRun();
       pointsRef.current = [];
-      particles.current = [];
-      prevPos.current = null;
-      prevVel.current = { vx: 0, vy: 0 };
-      prevHolePx.current.clear();
-      prevHoleNorm.current.clear();
+      seedRef.current = 1;
       clearPaint();
       blit();
-      wasRunning.current = false;
-    } else if (simState === 'running' && wasRunning.current) {
-      // New layer: reset simulation state but keep canvas + points
-      tRef.current = 0;
-      totalFlow.current = 0;
-      particles.current = [];
-      prevPos.current = null;
-      prevVel.current = { vx: 0, vy: 0 };
-      prevHolePx.current.clear();
-      prevHoleNorm.current.clear();
+    } else if (simState === 'running') {
+      if (prev === 'done' || prev === 'idle') {
+        resetRun();
+      }
+      // prev === 'paused' -> resume seamlessly: keep tRef and all run state.
     }
-    if (simState === 'running') wasRunning.current = true;
-  }, [simState, clearPaint, blit, pointsRef]);
+
+    prevStateRef.current = simState;
+  }, [simState, clearPaint, blit, pointsRef, resetRun]);
 
   // ── Repaint background when idle ──
   useEffect(() => {
@@ -158,9 +175,7 @@ export default function PaintCanvas({
     });
   }, [loadImage, blit, onImageLoaded]);
 
-  // ── Click to set drop position (idle only) ──
-  // Canvas rendering: canvasNorm = 0.5 + physPos * SCALE
-  // Inverse: physPos = (canvasNorm - 0.5) / SCALE
+  // ── Click to set drop position (idle/done only) ──
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (stateRef.current !== 'idle' && stateRef.current !== 'done') return;
     const rect = displayRef.current?.getBoundingClientRect();
@@ -206,6 +221,8 @@ export default function PaintCanvas({
       const drop = s.dropPosition;
       const prepared = prepareHarmonograph(s.pendulum, drop, s.throwMode, s.throwSpeed);
 
+      if (pointsRef.current.length >= MAX_POINTS) { cbRef.current('done'); return; }
+
       for (let step = 0; step < STEPS_PER_FRAME; step++) {
         const t = tRef.current;
         if (isSimulationDone(t, prepared)) { cbRef.current('done'); return; }
@@ -213,10 +230,8 @@ export default function PaintCanvas({
         const pos = calcPosition(t, prepared);
         const vel = calcVelocity(t, prepared);
         const speed = Math.sqrt(vel.vx * vel.vx + vel.vy * vel.vy);
-        // Bob height from pendulum geometry: higher at edges, lowest at center
         const zHeight = calcBobHeight(pos.x, pos.y, s.pendulum.stringLength);
 
-        // Canvas surface offset
         const co = calcCanvasOffset(t, s.canvasMotion);
 
         const centripetal = calcCentripetalAccel(vel.vx, vel.vy, prevVel.current.vx, prevVel.current.vy, DT);
@@ -226,7 +241,6 @@ export default function PaintCanvas({
         const flowRate = calcPaintFlowRate(centripetal, ps.viscosity, paintLevel);
         const normFlow = Math.min(flowRate / 5, 1);
 
-        // Pendulum position on canvas (with canvas motion offset)
         const cx = 0.5 + pos.x * SCALE + co.ox;
         const cy = 0.5 + pos.y * SCALE + co.oy;
 
@@ -248,11 +262,11 @@ export default function PaintCanvas({
           const py = (hy + jy) * PAINT_SIZE;
           const pr = jr * PAINT_SIZE;
 
-          // Normalized coordinates for this point
           const normX = hx + jx;
           const normY = hy + jy;
 
-          // Connect stroke to previous position (PRIMARY visual — thick paint)
+          const strokeSeed = nextSeed();
+
           const prev = prevHolePx.current.get(h);
           const prevNorm = prevHoleNorm.current.get(h);
           if (prev) {
@@ -261,13 +275,12 @@ export default function PaintCanvas({
               const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
               const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
               for (let i = 0; i < ts.length; i++) {
-                drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed);
+                drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i));
               }
             }
           }
           prevHolePx.current.set(h, { x: px, y: py });
 
-          // Store point with stroke data for high-res export
           pointsRef.current.push({
             x: normX, y: normY,
             fromX: prevNorm?.x, fromY: prevNorm?.y,
@@ -275,11 +288,11 @@ export default function PaintCanvas({
             viscosity: ps.viscosity,
             brushType: ps.brushType,
             speed,
+            seed: strokeSeed,
           });
           prevHoleNorm.current.set(h, { x: normX, y: normY });
           totalFlow.current += normFlow * DT * 0.01;
 
-          // Splash particles — power-law sizes, varied angles
           if (ps.splashEnabled && prevPos.current) {
             const sp = shouldSplash(speed, radius, ps.viscosity, ps.splashIntensity);
             if (sp.splash && Math.random() < 0.35) {
@@ -287,13 +300,13 @@ export default function PaintCanvas({
               for (let p = 0; p < sp.particleCount; p++) {
                 const angle = moveAngle + (Math.random() - 0.5) * Math.PI * 1.5;
                 const pv = 0.0003 + Math.random() * sp.maxSpeed * 0.01;
-                // Power-law: many tiny splashes, few large ones
                 const sizePow = Math.pow(Math.random(), 2.5);
                 const splashR = jr * (0.03 + sizePow * 0.35);
                 particles.current.push({
                   x: hx, y: hy, vx: Math.cos(angle) * pv, vy: Math.sin(angle) * pv,
                   radius: splashR, color: hole.color, life: 1,
                   decay: 0.015 + Math.random() * 0.05 + ps.viscosity * 0.03,
+                  seed: nextSeed(),
                 });
               }
             }
@@ -303,20 +316,29 @@ export default function PaintCanvas({
         prevPos.current = { x: cx, y: cy };
         prevVel.current = { vx: vel.vx, vy: vel.vy };
 
-        // Update splash particles
         particles.current = particles.current.filter(p => {
           p.x += p.vx; p.y += p.vy;
-          p.vy += 0.00003; // gravity
+          p.vy += 0.00003;
           p.vx *= 0.96 + ps.viscosity * 0.03;
           p.vy *= 0.96 + ps.viscosity * 0.03;
           p.life -= p.decay;
           if (p.life > 0) {
             const ppx = p.x * PAINT_SIZE, ppy = p.y * PAINT_SIZE, ppr = p.radius * PAINT_SIZE * p.life;
             const pvx = p.vx * PAINT_SIZE, pvy = p.vy * PAINT_SIZE;
-            for (const tp of getSymmetryTransforms(ppx, ppy, PAINT_SIZE, sym)) {
-              drawSplashDot(paintCtx, tp.x, tp.y, ppr, p.color, p.life * 0.5, pvx, pvy, ps.viscosity);
+            const copies = getSymmetryTransforms(ppx, ppy, PAINT_SIZE, sym);
+            for (let i = 0; i < copies.length; i++) {
+              drawSplashDot(paintCtx, copies[i].x, copies[i].y, ppr, p.color, p.life * 0.5, pvx, pvy, ps.viscosity, copySeed(p.seed, i));
             }
-            pointsRef.current.push({ x: p.x, y: p.y, radius: p.radius * p.life * 0.5, color: p.color, opacity: p.life * 0.4 });
+            pointsRef.current.push({
+              x: p.x, y: p.y,
+              radius: p.radius * p.life,
+              color: p.color,
+              opacity: p.life * 0.5,
+              vx: p.vx, vy: p.vy,
+              viscosity: ps.viscosity,
+              isSplash: true,
+              seed: p.seed,
+            });
             return true;
           }
           return false;
@@ -325,10 +347,8 @@ export default function PaintCanvas({
         tRef.current += DT * s.speed;
       }
 
-      // Blit to display
       blit();
 
-      // Draw HUD overlay on display canvas
       const display = displayRef.current;
       if (display) {
         const ctx = display.getContext('2d');
@@ -337,7 +357,6 @@ export default function PaintCanvas({
           const co = calcCanvasOffset(tRef.current, sRef.current.canvasMotion);
           const ps = sRef.current.paint;
 
-          // Pendulum cursor
           const ix = (0.5 + pos.x * SCALE + co.ox) * display.width;
           const iy = (0.5 + pos.y * SCALE + co.oy) * display.height;
           ctx.globalAlpha = 0.35;
@@ -347,7 +366,6 @@ export default function PaintCanvas({
           ctx.arc(ix, iy, 6, 0, Math.PI * 2);
           ctx.stroke();
 
-          // Paint level bar
           const pl = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
           const bw = 4, bh = 50, bx = display.width - 16, by = 12;
           ctx.globalAlpha = 0.25;
@@ -367,21 +385,17 @@ export default function PaintCanvas({
     return () => { alive = false; cancelAnimationFrame(raf.current); };
   }, [simState, blit, pointsRef]);
 
-  // ── blit once on mount and when size changes ──
   useEffect(() => { blit(); }, [canvasSize, blit]);
 
-  // ── Compute DPR-scaled canvas dimensions ──
   const pxW = canvasSize * dpr;
   const pxH = canvasSize * dpr;
 
-  // ── Drop position indicator (same coord mapping as physics renderer) ──
   const showDrop = simState === 'idle';
   const dp = settings.dropPosition;
   const dropPxX = (0.5 + dp.x * SCALE) * canvasSize;
   const dropPxY = (0.5 + dp.y * SCALE) * canvasSize;
   const dropDist = Math.sqrt(dp.x * dp.x + dp.y * dp.y);
 
-  // Throw direction indicator
   const isThrow = settings.throwMode === 'throw-cw' || settings.throwMode === 'throw-ccw';
   const throwAngle = Math.atan2(dp.y, dp.x) + (settings.throwMode === 'throw-cw' ? Math.PI / 2 : -Math.PI / 2);
 
@@ -397,34 +411,27 @@ export default function PaintCanvas({
           onClick={handleCanvasClick}
           onMouseMove={handleCanvasMove}
           onMouseLeave={() => setHoveredDrop(null)}
+          aria-label="Pendelmaleri-lerret. Klikk for a plassere pendelens slipp-punkt."
+          role="img"
         />
 
-        {/* Drop position marker */}
         {showDrop && (
           <>
-            {/* Drop point */}
             <div
               className="absolute pointer-events-none"
-              style={{
-                left: dropPxX - 12,
-                top: dropPxY - 12,
-                width: 24,
-                height: 24,
-              }}
+              style={{ left: dropPxX - 12, top: dropPxY - 12, width: 24, height: 24 }}
             >
               <div className="w-full h-full rounded-full border-2 border-indigo-400 bg-indigo-500/20 flex items-center justify-center">
                 <div className="w-2 h-2 rounded-full bg-indigo-400" />
               </div>
             </div>
 
-            {/* Line from center to drop point */}
             <svg className="absolute inset-0 pointer-events-none" width={canvasSize} height={canvasSize}>
               <line
                 x1={canvasSize / 2} y1={canvasSize / 2}
                 x2={dropPxX} y2={dropPxY}
                 stroke="rgba(129,140,248,0.3)" strokeWidth="1" strokeDasharray="4 4"
               />
-              {/* Throw direction arrow */}
               {isThrow && dropDist > 0.1 && (
                 <>
                   <line
@@ -441,15 +448,13 @@ export default function PaintCanvas({
               )}
             </svg>
 
-            {/* Energy label */}
             <div
               className="absolute pointer-events-none text-[10px] bg-gray-900/80 text-indigo-300 px-1.5 py-0.5 rounded"
               style={{ left: dropPxX + 16, top: dropPxY - 8 }}
             >
-              {isThrow ? 'Kast' : 'Slipp'}: {Math.round(dropDist * 100)}%
+              {isThrow ? 'Kast' : 'Slipp'}: {Math.round(dropDist / 1.5 * 100)}%
             </div>
 
-            {/* Hover preview */}
             {hoveredDrop && (
               <div
                 className="absolute pointer-events-none w-4 h-4 rounded-full border border-indigo-300/40"
@@ -460,12 +465,11 @@ export default function PaintCanvas({
               />
             )}
 
-            {/* Instruction */}
             <div className="absolute bottom-3 left-0 right-0 text-center">
               <span className="text-[11px] bg-gray-900/80 backdrop-blur text-gray-400 px-3 py-1.5 rounded-full">
                 {isThrow
-                  ? 'Klikk for å plassere — pendelen kastes i sirkelbevegelse'
-                  : 'Klikk for å plassere pendelen — lenger ut = mer energi'}
+                  ? 'Klikk for a plassere - pendelen kastes i sirkelbevegelse'
+                  : 'Klikk for a plassere pendelen - lenger ut = mer energi'}
               </span>
             </div>
           </>

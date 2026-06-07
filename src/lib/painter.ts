@@ -1,4 +1,29 @@
-import { SymmetrySettings, BrushType } from './types';
+import { SymmetrySettings, BrushType, PaintPoint } from './types';
+
+// ═══════════════════════════════════════════════════════════
+// DETERMINISTIC RNG
+// Every stroke carries a seed so the live canvas and the
+// high-resolution export render bit-for-bit identically.
+// mulberry32: fast, well-distributed 32-bit PRNG.
+// ═══════════════════════════════════════════════════════════
+
+export type Rng = () => number;
+
+export function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Derive a per-symmetry-copy seed from a point's base seed. */
+export function copySeed(baseSeed: number, copyIndex: number): number {
+  return (baseSeed * 2654435761 + copyIndex * 40503) >>> 0;
+}
 
 // ── Color helpers ──
 
@@ -17,9 +42,9 @@ function lighten(hex: string, amount: number): string {
   return `rgb(${Math.min(255, Math.round(r + (255 - r) * amount))},${Math.min(255, Math.round(g + (255 - g) * amount))},${Math.min(255, Math.round(b + (255 - b) * amount))})`;
 }
 
-function varyColor(hex: string, amount: number): string {
+function varyColor(hex: string, amount: number, rng: Rng): string {
   const [r, g, b] = parseColor(hex);
-  const vary = (c: number) => Math.max(0, Math.min(255, Math.round(c + (Math.random() - 0.5) * 2 * amount * 255)));
+  const vary = (c: number) => Math.max(0, Math.min(255, Math.round(c + (rng() - 0.5) * 2 * amount * 255)));
   return `rgb(${vary(r)},${vary(g)},${vary(b)})`;
 }
 
@@ -51,27 +76,26 @@ export function getSymmetryTransforms(x: number, y: number, size: number, sym: S
 }
 
 // ═══════════════════════════════════════════════════════════
-// BRUSH-TYPE STROKE RENDERERS
+// BRUSH-TYPE STROKE RENDERERS  (all deterministic via rng)
 // ═══════════════════════════════════════════════════════════
 
 /** Bucket hole: thick blobby paint, irregular edges, pools at slow points */
 function strokeBucket(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, viscosity: number, speed: number,
+  radius: number, color: string, opacity: number, viscosity: number, speed: number, rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
 
   ctx.save();
 
-  // Thickness varies — thicker at slow spots (pooling)
   const speedVar = 1 / (1 + speed * 0.5);
-  const wobble = 1 + (Math.random() - 0.5) * 0.25 * (1 - viscosity);
+  const wobble = 1 + (rng() - 0.5) * 0.25 * (1 - viscosity);
   const r = radius * speedVar * wobble;
 
-  ctx.globalAlpha = Math.min(opacity * (0.85 + Math.random() * 0.15), 1);
-  ctx.strokeStyle = varyColor(color, 0.02);
+  ctx.globalAlpha = Math.min(opacity * (0.85 + rng() * 0.15), 1);
+  ctx.strokeStyle = varyColor(color, 0.02, rng);
   ctx.lineWidth = r * 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -80,27 +104,25 @@ function strokeBucket(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Irregular edge roughness
   if (r > 2) {
     const edgeCount = Math.floor(dist / (r * 0.8)) + 1;
     for (let i = 0; i < edgeCount; i++) {
-      const t = Math.random();
+      const t = rng();
       const mx = x1 + (x2 - x1) * t;
       const my = y1 + (y2 - y1) * t;
       const angle = Math.atan2(y2 - y1, x2 - x1) + Math.PI / 2;
-      const side = Math.random() > 0.5 ? 1 : -1;
-      const blobR = r * (0.15 + Math.random() * 0.35);
+      const side = rng() > 0.5 ? 1 : -1;
+      const blobR = r * (0.15 + rng() * 0.35);
       const bx = mx + Math.cos(angle) * side * (r + blobR * 0.3);
       const by = my + Math.sin(angle) * side * (r + blobR * 0.3);
-      ctx.globalAlpha = opacity * (0.3 + Math.random() * 0.3);
-      ctx.fillStyle = varyColor(color, 0.03);
+      ctx.globalAlpha = opacity * (0.3 + rng() * 0.3);
+      ctx.fillStyle = varyColor(color, 0.03, rng);
       ctx.beginPath();
       ctx.arc(bx, by, blobR, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // Edge darkening
   if (r > 1.5) {
     ctx.globalAlpha = opacity * (0.08 + viscosity * 0.06);
     ctx.strokeStyle = darken(color, 0.3);
@@ -119,7 +141,7 @@ function strokeBucket(
 function strokeFineBrush(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, _viscosity: number, speed: number,
+  radius: number, color: string, opacity: number, _viscosity: number, speed: number, _rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -139,7 +161,6 @@ function strokeFineBrush(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Ink bleed at slow speeds
   if (speed < 0.5 && r > 1) {
     ctx.globalAlpha = opacity * 0.08;
     ctx.lineWidth = r * 3.5;
@@ -156,7 +177,7 @@ function strokeFineBrush(
 function strokeFlatBrush(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, viscosity: number, _speed: number,
+  radius: number, color: string, opacity: number, viscosity: number, _speed: number, rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -172,17 +193,17 @@ function strokeFlatBrush(
   for (let b = 0; b < bristleCount; b++) {
     const t = (b / (bristleCount - 1)) - 0.5;
     const spread = r * 2 * t;
-    const bristleWobble = (Math.random() - 0.5) * r * 0.1;
+    const bristleWobble = (rng() - 0.5) * r * 0.1;
     const bx1 = x1 + perpX * (spread + bristleWobble);
     const by1 = y1 + perpY * (spread + bristleWobble);
     const bx2 = x2 + perpX * (spread + bristleWobble * 0.7);
     const by2 = y2 + perpY * (spread + bristleWobble * 0.7);
 
-    const bristleWidth = (r * 2 / bristleCount) * (0.6 + Math.random() * 0.6);
-    const bristleOpacity = opacity * (0.5 + Math.random() * 0.5) * (1 - Math.abs(t) * 0.4);
+    const bristleWidth = (r * 2 / bristleCount) * (0.6 + rng() * 0.6);
+    const bristleOpacity = opacity * (0.5 + rng() * 0.5) * (1 - Math.abs(t) * 0.4);
 
     ctx.globalAlpha = Math.min(bristleOpacity, 1);
-    ctx.strokeStyle = varyColor(color, 0.015);
+    ctx.strokeStyle = varyColor(color, 0.015, rng);
     ctx.lineWidth = bristleWidth;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -191,7 +212,6 @@ function strokeFlatBrush(
     ctx.stroke();
   }
 
-  // Edge accumulation
   if (r > 2) {
     ctx.globalAlpha = opacity * 0.1 * viscosity;
     ctx.strokeStyle = darken(color, 0.25);
@@ -212,7 +232,7 @@ function strokeFlatBrush(
 function strokeMarker(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, _viscosity: number, _speed: number,
+  radius: number, color: string, opacity: number, _viscosity: number, _speed: number, _rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -232,7 +252,6 @@ function strokeMarker(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Darker core
   ctx.globalAlpha = opacity * 0.25;
   ctx.lineWidth = r * 1.2;
   ctx.beginPath();
@@ -247,7 +266,7 @@ function strokeMarker(
 function strokeDripStick(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, viscosity: number, speed: number,
+  radius: number, color: string, opacity: number, viscosity: number, speed: number, rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -256,10 +275,10 @@ function strokeDripStick(
 
   const dripPhase = Math.sin((x1 + y1) * 0.03) * 0.5 + 0.5;
   const isGlobule = dripPhase > 0.65 && speed < 1.5;
-  const r = isGlobule ? radius * (1.2 + Math.random() * 0.8) : radius * (0.15 + Math.random() * 0.25);
+  const r = isGlobule ? radius * (1.2 + rng() * 0.8) : radius * (0.15 + rng() * 0.25);
 
-  ctx.globalAlpha = Math.min(opacity * (isGlobule ? 0.9 : 0.65 + Math.random() * 0.3), 1);
-  ctx.strokeStyle = varyColor(color, 0.025);
+  ctx.globalAlpha = Math.min(opacity * (isGlobule ? 0.9 : 0.65 + rng() * 0.3), 1);
+  ctx.strokeStyle = varyColor(color, 0.025, rng);
   ctx.lineWidth = r * 2;
   ctx.lineCap = 'round';
   ctx.beginPath();
@@ -270,23 +289,23 @@ function strokeDripStick(
   if (isGlobule) {
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
     ctx.globalAlpha = opacity * 0.4;
-    ctx.fillStyle = varyColor(color, 0.03);
+    ctx.fillStyle = varyColor(color, 0.03, rng);
     ctx.beginPath();
-    ctx.arc(mx + (Math.random() - 0.5) * r, my + (Math.random() - 0.5) * r, r * (0.5 + Math.random() * 0.5), 0, Math.PI * 2);
+    ctx.arc(mx + (rng() - 0.5) * r, my + (rng() - 0.5) * r, r * (0.5 + rng() * 0.5), 0, Math.PI * 2);
     ctx.fill();
 
-    // Gravity drip from globule
-    if (Math.random() < 0.15 * (1 - viscosity)) {
-      const dripLen = r * (1 + Math.random() * 3);
+    if (rng() < 0.15 * (1 - viscosity)) {
+      const dripLen = r * (1 + rng() * 3);
+      const jitter = (rng() - 0.5) * r * 0.3;
       ctx.globalAlpha = opacity * 0.3;
       ctx.lineWidth = r * 0.2;
       ctx.beginPath();
       ctx.moveTo(mx, my);
-      ctx.lineTo(mx + (Math.random() - 0.5) * r * 0.3, my + dripLen);
+      ctx.lineTo(mx + jitter, my + dripLen);
       ctx.stroke();
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(mx + (Math.random() - 0.5) * r * 0.3, my + dripLen, r * 0.25, 0, Math.PI * 2);
+      ctx.arc(mx + jitter, my + dripLen, r * 0.25, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -298,7 +317,7 @@ function strokeDripStick(
 function strokeSqueeze(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, _viscosity: number, _speed: number,
+  radius: number, color: string, opacity: number, _viscosity: number, _speed: number, _rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -307,7 +326,6 @@ function strokeSqueeze(
 
   const r = radius * 0.85;
 
-  // Main bead
   ctx.globalAlpha = Math.min(opacity, 1);
   ctx.strokeStyle = color;
   ctx.lineWidth = r * 2;
@@ -318,7 +336,6 @@ function strokeSqueeze(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Highlight for 3D raised bead
   ctx.globalAlpha = opacity * 0.12;
   ctx.strokeStyle = lighten(color, 0.5);
   ctx.lineWidth = r * 0.7;
@@ -327,7 +344,6 @@ function strokeSqueeze(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Shadow underneath
   ctx.globalAlpha = opacity * 0.08;
   ctx.strokeStyle = darken(color, 0.4);
   ctx.lineWidth = r * 2.3;
@@ -343,7 +359,7 @@ function strokeSqueeze(
 function strokeSpray(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
-  radius: number, color: string, opacity: number, _viscosity: number, _speed: number,
+  radius: number, color: string, opacity: number, _viscosity: number, _speed: number, rng: Rng,
 ) {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   if (dist < 0.1) return;
@@ -351,22 +367,22 @@ function strokeSpray(
   ctx.save();
 
   const sprayRadius = radius * 3;
-  const dotCount = Math.floor(4 + radius * 2 + Math.random() * 3);
+  const dotCount = Math.floor(4 + radius * 2 + rng() * 3);
   const [cr, cg, cb] = parseColor(color);
 
   for (let i = 0; i < dotCount; i++) {
-    const t = Math.random();
+    const t = rng();
     const mx = x1 + (x2 - x1) * t;
     const my = y1 + (y2 - y1) * t;
 
-    const angle = Math.random() * Math.PI * 2;
-    const spread = sprayRadius * Math.sqrt(Math.random()) * (0.3 + Math.random() * 0.7);
+    const angle = rng() * Math.PI * 2;
+    const spread = sprayRadius * Math.sqrt(rng()) * (0.3 + rng() * 0.7);
     const dx = mx + Math.cos(angle) * spread;
     const dy = my + Math.sin(angle) * spread;
 
-    const dotR = 0.3 + Math.random() * 1.5;
+    const dotR = 0.3 + rng() * 1.5;
     const distFromCenter = spread / sprayRadius;
-    const dotOpacity = opacity * (0.15 + Math.random() * 0.35) * (1 - distFromCenter * 0.5);
+    const dotOpacity = opacity * (0.15 + rng() * 0.35) * (1 - distFromCenter * 0.5);
 
     ctx.globalAlpha = Math.min(dotOpacity, 1);
     ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
@@ -375,7 +391,6 @@ function strokeSpray(
     ctx.fill();
   }
 
-  // Faint core line
   ctx.globalAlpha = opacity * 0.15;
   ctx.strokeStyle = color;
   ctx.lineWidth = radius * 0.3;
@@ -402,17 +417,19 @@ export function drawThickStroke(
   viscosity: number,
   brushType: BrushType = 'bucket',
   speed: number = 0,
+  seed: number = 1,
 ) {
   if (radius < 0.3) return;
+  const rng = mulberry32(seed);
 
   switch (brushType) {
-    case 'bucket':      strokeBucket(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'fine-brush':  strokeFineBrush(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'flat-brush':  strokeFlatBrush(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'marker':      strokeMarker(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'drip-stick':  strokeDripStick(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'squeeze':     strokeSqueeze(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
-    case 'spray':       strokeSpray(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed); break;
+    case 'bucket':      strokeBucket(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'fine-brush':  strokeFineBrush(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'flat-brush':  strokeFlatBrush(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'marker':      strokeMarker(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'drip-stick':  strokeDripStick(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'squeeze':     strokeSqueeze(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
+    case 'spray':       strokeSpray(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
   }
 }
 
@@ -429,26 +446,26 @@ export function drawSplashDot(
   vx: number = 0,
   vy: number = 0,
   viscosity: number = 0.5,
+  seed: number = 1,
 ) {
   if (r < 0.15) return;
+  const rng = mulberry32(seed);
   ctx.save();
 
   const speed = Math.sqrt(vx * vx + vy * vy);
   const elongation = Math.min(speed * 400, 3);
 
   if (elongation > 0.5 && r > 0.5) {
-    // Elongated teardrop
     const angle = Math.atan2(vy, vx);
     ctx.translate(x, y);
     ctx.rotate(angle);
 
     ctx.globalAlpha = Math.min(opacity, 1);
-    ctx.fillStyle = varyColor(color, 0.02);
+    ctx.fillStyle = varyColor(color, 0.02, rng);
     ctx.beginPath();
     ctx.ellipse(0, 0, r * (1 + elongation * 0.5), r * (0.6 + (1 - elongation / 3) * 0.4), 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Trailing tail for fast droplets
     if (elongation > 1.2 && r > 1) {
       const tailLen = r * elongation * 0.8;
       ctx.globalAlpha = opacity * 0.3;
@@ -461,15 +478,13 @@ export function drawSplashDot(
       ctx.stroke();
     }
   } else {
-    // Small/slow: circular with slight irregularity
     ctx.globalAlpha = Math.min(opacity, 1);
-    ctx.fillStyle = varyColor(color, 0.02);
+    ctx.fillStyle = varyColor(color, 0.02, rng);
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // High viscosity: filament trail
   if (viscosity > 0.6 && r > 1 && speed > 0.0001) {
     const filLen = r * 2 * viscosity;
     const angle = Math.atan2(vy, vx);
@@ -486,7 +501,7 @@ export function drawSplashDot(
   ctx.restore();
 }
 
-// ── Paint accumulation blob ──
+// ── Paint accumulation blob (used for layer-start dots / loaded points) ──
 
 export function drawPaintBlob(
   ctx: CanvasRenderingContext2D,
@@ -495,8 +510,10 @@ export function drawPaintBlob(
   color: string,
   opacity: number,
   viscosity: number,
+  seed: number = 1,
 ) {
   if (radius < 0.5) return;
+  const rng = mulberry32(seed);
 
   ctx.save();
   const [r, g, b] = parseColor(color);
@@ -507,20 +524,18 @@ export function drawPaintBlob(
   ctx.arc(x, y, radius * 0.7, 0, Math.PI * 2);
   ctx.fill();
 
-  // Irregular edge blobs for organic pooling
-  const blobCount = 3 + Math.floor(Math.random() * 4);
+  const blobCount = 3 + Math.floor(rng() * 4);
   for (let i = 0; i < blobCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = radius * (0.3 + Math.random() * 0.5);
-    const bR = radius * (0.15 + Math.random() * 0.25);
-    ctx.globalAlpha = opacity * (0.2 + Math.random() * 0.3);
-    ctx.fillStyle = varyColor(color, 0.02);
+    const angle = rng() * Math.PI * 2;
+    const dist = radius * (0.3 + rng() * 0.5);
+    const bR = radius * (0.15 + rng() * 0.25);
+    ctx.globalAlpha = opacity * (0.2 + rng() * 0.3);
+    ctx.fillStyle = varyColor(color, 0.02, rng);
     ctx.beginPath();
     ctx.arc(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist, bR, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // Soft gradient edge
   const grad = ctx.createRadialGradient(x, y, radius * 0.4, x, y, radius);
   grad.addColorStop(0, `rgba(${r},${g},${b},${0.5 * opacity})`);
   grad.addColorStop(0.5 + viscosity * 0.3, `rgba(${r},${g},${b},${0.2 * opacity})`);
@@ -534,44 +549,84 @@ export function drawPaintBlob(
   ctx.restore();
 }
 
+// ═══════════════════════════════════════════════════════════
+// HIGH-RESOLUTION EXPORT RENDERER
+// Replays stored points at any resolution. Because every point
+// carries its own seed, the result is identical (scaled) to the
+// live canvas — true WYSIWYG export.
+// ═══════════════════════════════════════════════════════════
 
-// ── High-resolution export renderer ──
-
-export function renderPointsHighRes(
+function renderOnePoint(
   ctx: CanvasRenderingContext2D,
-  points: Array<{ x: number; y: number; fromX?: number; fromY?: number; radius: number; color: string; opacity: number; viscosity?: number; brushType?: BrushType; speed?: number }>,
+  p: PaintPoint,
   canvasSize: number,
   symmetry: SymmetrySettings,
-  backgroundColor: string
 ) {
-  ctx.fillStyle = backgroundColor;
-  ctx.fillRect(0, 0, canvasSize, canvasSize);
+  const x2 = p.x * canvasSize;
+  const y2 = p.y * canvasSize;
+  const r = p.radius * canvasSize;
+  const visc = p.viscosity ?? 0.5;
+  const brush = p.brushType ?? 'bucket';
+  const spd = p.speed ?? 0;
+  const baseSeed = p.seed ?? 1;
 
-  for (const p of points) {
-    const x2 = p.x * canvasSize;
-    const y2 = p.y * canvasSize;
-    const r = p.radius * canvasSize;
-    const visc = p.viscosity ?? 0.5;
-    const brush = p.brushType ?? 'bucket';
-    const spd = p.speed ?? 0;
+  if (p.isSplash) {
+    if (r < 0.15) return;
+    const vx = (p.vx ?? 0) * canvasSize;
+    const vy = (p.vy ?? 0) * canvasSize;
+    const copies = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
+    for (let i = 0; i < copies.length; i++) {
+      drawSplashDot(ctx, copies[i].x, copies[i].y, r, p.color, p.opacity, vx, vy, visc, copySeed(baseSeed, i));
+    }
+    return;
+  }
 
-    if (p.fromX != null && p.fromY != null) {
-      const x1 = p.fromX * canvasSize;
-      const y1 = p.fromY * canvasSize;
-      const d = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-      if (d < canvasSize * 0.15 && d > 0.5) {
-        const transforms2 = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
-        const transforms1 = getSymmetryTransforms(x1, y1, canvasSize, symmetry);
-        for (let i = 0; i < transforms2.length; i++) {
-          drawThickStroke(ctx, transforms1[i].x, transforms1[i].y, transforms2[i].x, transforms2[i].y, r, p.color, p.opacity, visc, brush, spd);
-        }
-      }
-    } else {
-      if (r > 0.3) {
-        for (const t of getSymmetryTransforms(x2, y2, canvasSize, symmetry)) {
-          drawPaintBlob(ctx, t.x, t.y, r * 0.8, p.color, p.opacity * 0.5, visc);
-        }
+  if (p.fromX != null && p.fromY != null) {
+    const x1 = p.fromX * canvasSize;
+    const y1 = p.fromY * canvasSize;
+    const d = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    if (d < canvasSize * 0.15 && d > 0.5) {
+      const t2 = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
+      const t1 = getSymmetryTransforms(x1, y1, canvasSize, symmetry);
+      for (let i = 0; i < t2.length; i++) {
+        drawThickStroke(ctx, t1[i].x, t1[i].y, t2[i].x, t2[i].y, r, p.color, p.opacity, visc, brush, spd, copySeed(baseSeed, i));
       }
     }
   }
+}
+
+/** Synchronous render — fine for small/medium sizes and tests. */
+export function renderPointsHighRes(
+  ctx: CanvasRenderingContext2D,
+  points: PaintPoint[],
+  canvasSize: number,
+  symmetry: SymmetrySettings,
+  backgroundColor: string,
+) {
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+  for (const p of points) renderOnePoint(ctx, p, canvasSize, symmetry);
+}
+
+/** Async chunked render — keeps the UI responsive and reports progress. */
+export async function renderPointsHighResAsync(
+  ctx: CanvasRenderingContext2D,
+  points: PaintPoint[],
+  canvasSize: number,
+  symmetry: SymmetrySettings,
+  backgroundColor: string,
+  onProgress?: (fraction: number) => void,
+  chunkSize = 4000,
+): Promise<void> {
+  ctx.fillStyle = backgroundColor;
+  ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+  const total = points.length;
+  for (let start = 0; start < total; start += chunkSize) {
+    const end = Math.min(start + chunkSize, total);
+    for (let i = start; i < end; i++) renderOnePoint(ctx, points[i], canvasSize, symmetry);
+    onProgress?.(end / Math.max(total, 1));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  onProgress?.(1);
 }

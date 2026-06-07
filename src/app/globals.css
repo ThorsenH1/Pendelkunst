@@ -68,3 +68,31 @@ input[type='color']::-webkit-color-swatch {
     0 4px 24px rgba(0,0,0,0.5),
     inset 0 0 60px rgba(0,0,0,0.1);
 }
+
+/* Keyboard focus visibility (accessibility) */
+:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* Respect users who prefer reduced motion for UI transitions */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

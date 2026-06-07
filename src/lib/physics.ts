@@ -47,17 +47,25 @@ function pendulumToHarmonograph(
   const x0 = drop.x;
   const y0 = drop.y;
 
-  // Initial velocity (zero for drop, tangential for throw)
+  // Initial velocity. A real pendulum release is never perfectly radial:
+  // the hand always imparts a slight sideways motion, so the swing opens into a
+  // thin, slowly-precessing ellipse — the classic rosette of real pendulum art.
+  // 'throw' makes that sideways motion strong and directional (near-circular orbit).
+  const dist = Math.sqrt(x0 * x0 + y0 * y0) || 0.01;
+  const angle = Math.atan2(y0, x0);
   let vx0 = 0, vy0 = 0;
   if (throwMode === 'throw-cw' || throwMode === 'throw-ccw') {
-    const dist = Math.sqrt(x0 * x0 + y0 * y0) || 0.01;
-    const angle = Math.atan2(y0, x0);
     const dir = throwMode === 'throw-cw' ? 1 : -1;
-    // Tangential velocity perpendicular to radial direction
     const tangentAngle = angle + dir * Math.PI / 2;
-    // Scale by natural frequency × displacement for physical realism
-    // v = throwSpeed × ω₀ × dist gives the characteristic velocity
-    const vMag = throwSpeed * omega0 * dist * 0.4;
+    // Characteristic velocity scales with natural frequency and displacement.
+    const vMag = throwSpeed * omega0 * dist;
+    vx0 = vMag * Math.cos(tangentAngle);
+    vy0 = vMag * Math.sin(tangentAngle);
+  } else {
+    // 'drop': a gentle, fixed perpendicular nudge (CCW) opens the line into a
+    // graceful precessing ellipse instead of a degenerate straight stroke.
+    const tangentAngle = angle - Math.PI / 2;
+    const vMag = omega0 * dist * 0.7;
     vx0 = vMag * Math.cos(tangentAngle);
     vy0 = vMag * Math.sin(tangentAngle);
   }
@@ -104,14 +112,13 @@ export function calcVelocity(t: number, config: HarmonographConfig) {
 }
 
 /** Pendulum bob height above lowest point (0 at center, >0 at extremes).
- *  Uses the geometric relation h = L(1 - cos θ) ≈ r²/(2L) for small angles.
- *  Normalized output: 0 (bob at lowest / closest to surface) → ~1 (max swing). */
+ *  Real geometry: h = L(1 - cos theta) ~= r^2/(2L) for small swings, where r is the
+ *  horizontal displacement. A LONGER string swings through a smaller angle for the
+ *  same displacement, so the bob rises less -> a flatter arc and gentler paint spread.
+ *  Normalized so L = 1 m reproduces the original look while genuinely tracking L. */
 export function calcBobHeight(x: number, y: number, stringLength: number): number {
   const r2 = x * x + y * y;
-  // h = r²/(2L), normalized to [0,1] where max r ≈ 1 → h_max ≈ 1/(2L)
-  // We scale so that h=1 when r=1 for a typical string length
-  const h = r2 / (2 * stringLength);
-  return Math.min(h * stringLength * 2, 1); // normalize: at r=1, h approaches 1
+  return Math.min(r2 / stringLength, 1);
 }
 
 export function getMaxAmplitude(t: number, config: HarmonographConfig): number {

@@ -86,6 +86,13 @@ export interface PaintPoint {
   viscosity?: number;
   brushType?: BrushType;
   speed?: number;
+  /** Deterministic seed so export replays identically to the live canvas. */
+  seed?: number;
+  /** Splash particles carry velocity (normalized units) for teardrop shaping. */
+  vx?: number;
+  vy?: number;
+  /** True for splash droplets (rendered with drawSplashDot, not as a stroke). */
+  isSplash?: boolean;
 }
 
 export interface SplashParticle {
@@ -97,6 +104,8 @@ export interface SplashParticle {
   color: string;
   life: number;
   decay: number;
+  /** Stable seed for this particle's deterministic appearance. */
+  seed: number;
 }
 
 export type SimulationState = 'idle' | 'running' | 'paused' | 'done';

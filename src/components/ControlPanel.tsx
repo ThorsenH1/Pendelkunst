@@ -8,9 +8,14 @@ interface Props {
   onSettingsChange: (s: SimulationSettings) => void;
   simState: SimulationState;
   onSimStateChange: (state: SimulationState) => void;
+  onStartLayer: () => void;
   onExport: () => void;
   onSave: () => void;
   onShowGallery: () => void;
+  onRandomize: () => void;
+  onNewPainting: () => void;
+  onUndo: () => void;
+  canUndo: boolean;
   saveMsg?: string;
 }
 
@@ -43,7 +48,7 @@ function Slider({ label, value, min, max, step, onChange, formatValue }: {
 
 export default function ControlPanel({
   settings, onSettingsChange, simState, onSimStateChange,
-  onExport, onSave, onShowGallery, saveMsg,
+  onStartLayer, onExport, onSave, onShowGallery, onRandomize, onNewPainting, onUndo, canUndo, saveMsg,
 }: Props) {
   const canEdit = simState === 'idle' || simState === 'done';
 
@@ -105,9 +110,9 @@ export default function ControlPanel({
   return (
     <div className="p-4 text-sm">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <span className="text-2xl">🎨</span> Pendelkunst
-        </h2>
+        <h1 className="text-lg font-bold text-white flex items-center gap-2">
+          <span className="text-2xl" aria-hidden>🎨</span> Pendelkunst
+        </h1>
         <button
           onClick={onShowGallery}
           className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium transition-colors"
@@ -115,15 +120,23 @@ export default function ControlPanel({
           🖼️ Galleri
         </button>
       </div>
-      <p className="text-gray-500 text-xs mb-5">Lag ditt eget pendelmåleri</p>
+      <p className="text-gray-500 text-xs mb-4">Lag ditt eget pendelmaleri med ekte fysikk</p>
+
+      {/* Surprise me */}
+      <button
+        onClick={onRandomize}
+        disabled={!canEdit}
+        className="w-full mb-4 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        🎲 Overrask meg
+      </button>
 
       {/* Presets */}
-      <Section title="Kategori">
+      <Section title="Forhåndsinnstillinger">
         <div className="grid grid-cols-2 gap-2">
           {presets.map((p, i) => (
             <button key={p.name} onClick={() => applyPreset(i)} disabled={!canEdit}
               className="text-left px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-              <span className="text-base mr-1">{p.emoji}</span>
+              <span className="text-base mr-1" aria-hidden>{p.emoji}</span>
               <span className="text-gray-200 text-xs font-medium">{p.name}</span>
               <p className="text-[10px] text-gray-500 mt-0.5">{p.description}</p>
             </button>
@@ -133,8 +146,8 @@ export default function ControlPanel({
 
       {/* Drop / Throw mode */}
       <Section title="Slipp / Kast pendelen">
-        <p className="text-[10px] text-gray-500 mb-2">Velg om pendelen slippes stille eller kastes i en sirkelbevegelse (som i de virale YouTube-videoene)</p>
-        <div className="grid grid-cols-3 gap-1.5 mb-3">
+        <p className="text-[10px] text-gray-500 mb-2">Velg om pendelen slippes mykt eller kastes i en sirkelbevegelse (som i de virale videoene).</p>
+        <div className="grid grid-cols-3 gap-1.5 mb-3" role="group" aria-label="Slipp eller kast">
           {([
             ['drop', 'Slipp', '📍'],
             ['throw-ccw', 'Kast ↺', '🌀'],
@@ -143,11 +156,12 @@ export default function ControlPanel({
             <button key={mode}
               onClick={() => update({ throwMode: mode })}
               disabled={!canEdit}
+              aria-pressed={settings.throwMode === mode}
               className={`px-2 py-2 rounded-lg text-[11px] font-medium transition-colors ${
                 settings.throwMode === mode
                   ? 'bg-violet-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               } disabled:opacity-50 disabled:cursor-not-allowed`}>
-              <span className="text-sm">{icon}</span>
+              <span className="text-sm" aria-hidden>{icon}</span>
               <span className="block">{label}</span>
             </button>
           ))}
@@ -196,7 +210,7 @@ export default function ControlPanel({
             return v.toFixed(3);
           }}
           onChange={(v) => updatePendulum('frequencyRatio', v)} />
-        <p className="text-[10px] text-gray-500 -mt-2 mb-3">1.0 = symmetrisk. ≈1.02 = rosett. 3:2 / 5:3 = geometriske figurer.</p>
+        <p className="text-[10px] text-gray-500 -mt-2 mb-3">1.0 = symmetrisk sirkel. ≈1.02–1.06 = rosett. 3:2 / 5:3 = geometriske figurer.</p>
         <Slider label="Demping (friksjon)"
           value={settings.pendulum.damping}
           min={0.0005} max={0.02} step={0.0005}
@@ -210,7 +224,7 @@ export default function ControlPanel({
       {/* Canvas Motion */}
       <Section title="Underlag-bevegelse">
         <p className="text-[10px] text-gray-500 mb-2">Velg hvordan lerretet beveger seg under pendelen. Bevegelsen avtar realistisk over tid.</p>
-        <div className="grid grid-cols-3 gap-1.5 mb-3">
+        <div className="grid grid-cols-3 gap-1.5 mb-3" role="group" aria-label="Underlag-bevegelse">
           {([
             ['still', 'Stille', '⬜'],
             ['circular', 'Sirkel', '🔄'],
@@ -221,11 +235,12 @@ export default function ControlPanel({
             <button key={mode}
               onClick={() => update({ canvasMotion: { ...settings.canvasMotion, mode: mode as CanvasMotionMode } })}
               disabled={!canEdit}
+              aria-pressed={settings.canvasMotion.mode === mode}
               className={`px-2 py-2 rounded-lg text-[11px] font-medium transition-colors ${
                 settings.canvasMotion.mode === mode
                   ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               } disabled:opacity-50 disabled:cursor-not-allowed`}>
-              <span className="text-sm">{icon}</span>
+              <span className="text-sm" aria-hidden>{icon}</span>
               <span className="block">{label}</span>
             </button>
           ))}
@@ -250,7 +265,7 @@ export default function ControlPanel({
       <Section title="Maling">
         <div className="mb-3">
           <span className="text-gray-300 text-sm block mb-2">Verktøy</span>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Penseltype">
             {([
               ['bucket', '🪣', 'Bøtte', 'Tykt, blobaktig, renner'],
               ['fine-brush', '🖌️', 'Fin pensel', 'Tynn, elegant, trykkvar'],
@@ -263,11 +278,12 @@ export default function ControlPanel({
               <button key={type}
                 onClick={() => update({ paint: { ...settings.paint, brushType: type } })}
                 disabled={!canEdit}
+                aria-pressed={settings.paint.brushType === type}
                 className={`px-2 py-2 rounded-lg text-left transition-colors ${
                   settings.paint.brushType === type
                     ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}>
-                <span className="text-sm">{icon}</span>
+                <span className="text-sm" aria-hidden>{icon}</span>
                 <span className="block text-[11px] font-medium">{label}</span>
                 <span className="block text-[9px] opacity-60">{desc}</span>
               </button>
@@ -277,9 +293,10 @@ export default function ControlPanel({
 
         <div className="mb-3">
           <span className="text-gray-300 text-sm block mb-2">Antall hull</span>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Antall hull">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
               <button key={n} onClick={() => setHoleCount(n)} disabled={!canEdit}
+                aria-pressed={settings.paint.holes.length === n}
                 className={`w-9 h-9 rounded-lg font-bold text-sm transition-colors ${
                   settings.paint.holes.length === n ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}>
@@ -294,9 +311,10 @@ export default function ControlPanel({
           <div className="flex gap-2 flex-wrap">
             {settings.paint.holes.map((hole, i) => (
               <div key={i} className="flex flex-col items-center gap-1">
-                <input type="color" value={hole.color} onChange={(e) => updateHoleColor(i, e.target.value)} />
+                <input type="color" value={hole.color} onChange={(e) => updateHoleColor(i, e.target.value)} aria-label={`Farge for hull ${i + 1}`} />
                 <input type="range" className="w-9" min={0.3} max={2} step={0.1} value={hole.thickness}
                   onChange={(e) => updateHoleThickness(i, parseFloat(e.target.value))}
+                  aria-label={`Tykkelse for hull ${i + 1}`}
                   title={`Tykkelse: ${hole.thickness.toFixed(1)}`} />
                 <span className="text-[10px] text-gray-500">{i + 1}</span>
               </div>
@@ -334,11 +352,12 @@ export default function ControlPanel({
 
       {/* Symmetry */}
       <Section title="Symmetri">
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-3" role="group" aria-label="Symmetri">
           {([['none', 'Ingen'], ['mirror-x', 'Speil ↔'], ['mirror-y', 'Speil ↕'], ['mirror-both', 'Speil ✚'], ['rotational', 'Rotasjon']] as const).map(([mode, label]) => (
             <button key={mode}
               onClick={() => update({ symmetry: { ...settings.symmetry, mode } })}
               disabled={!canEdit}
+              aria-pressed={settings.symmetry.mode === mode}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                 settings.symmetry.mode === mode ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
               } disabled:opacity-50 disabled:cursor-not-allowed`}>
@@ -356,15 +375,15 @@ export default function ControlPanel({
       <Section title="Bakgrunn">
         <div className="flex items-center gap-3">
           <input type="color" value={settings.backgroundColor}
-            onChange={(e) => update({ backgroundColor: e.target.value })} disabled={!canEdit} />
+            onChange={(e) => update({ backgroundColor: e.target.value })} disabled={!canEdit} aria-label="Lerretsfarge" />
           <span className="text-gray-400 text-xs">Lerretsfarge</span>
         </div>
       </Section>
 
       {/* Action buttons */}
-      <div className="space-y-2 mt-2 pb-4">
+      <div className="space-y-2 mt-2 pb-2">
         {simState === 'idle' && (
-          <button onClick={() => onSimStateChange('running')}
+          <button onClick={onStartLayer}
             className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors text-base">
             ▶ Start maleriet
           </button>
@@ -385,7 +404,7 @@ export default function ControlPanel({
           <div className="text-center py-2 text-emerald-400 font-medium">✓ Maleriet er ferdig!</div>
         )}
         {simState === 'done' && (
-          <button onClick={() => onSimStateChange('running')}
+          <button onClick={onStartLayer}
             className="w-full py-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors">
             🎨 Nytt lag — mal videre
           </button>
@@ -397,10 +416,16 @@ export default function ControlPanel({
           </button>
         )}
         {saveMsg && (
-          <div className="text-center py-1 text-teal-400 text-xs animate-pulse">{saveMsg}</div>
+          <div className="text-center py-1 text-teal-400 text-xs animate-pulse" role="status">{saveMsg}</div>
+        )}
+        {canUndo && simState !== 'running' && (
+          <button onClick={onUndo}
+            className="w-full py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors">
+            ↶ Angre siste lag
+          </button>
         )}
         {(simState === 'paused' || simState === 'done' || simState === 'running') && (
-          <button onClick={() => onSimStateChange('idle')}
+          <button onClick={onNewPainting}
             className="w-full py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors">
             ⟲ Nytt maleri
           </button>
@@ -412,6 +437,10 @@ export default function ControlPanel({
           </button>
         )}
       </div>
+
+      <p className="text-[10px] text-gray-600 pb-4 leading-relaxed">
+        Snarveier: <kbd className="text-gray-400">Mellomrom</kbd> start/pause · <kbd className="text-gray-400">R</kbd> overrask · <kbd className="text-gray-400">N</kbd> nytt · <kbd className="text-gray-400">E</kbd> eksport · <kbd className="text-gray-400">Ctrl+Z</kbd> angre
+      </p>
     </div>
   );
 }
