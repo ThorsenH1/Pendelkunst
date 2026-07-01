@@ -140,8 +140,13 @@ Remaining:
 
 ## 8. Deploy / relaunch
 
-- Vercel project `pendelkunst` is linked to GitHub `ThorsenH1/Pendelkunst` (auto-deploys on push to `master`).
-- Flow: commit changes here → user runs `git push` → Vercel builds & deploys. (`.vercel/project.json`
-  has the project/org IDs; CLI deploy `vercel --prod` also works with a token.)
-- Pre-deploy checklist: `tsc --noEmit` clean · lint clean · headless render of presets looks right ·
-  no leftover sentinel/scratch files committed.
+- **GitHub push does NOT auto-deploy** (verified 2026-07: pushes to `ThorsenH1/Pendelkunst` produced
+  no Vercel deployment; the Git integration is not active). Deploy explicitly with the CLI:
+  `npx vercel --prod` from the repo root (CLI is authenticated as `thorsenh1`; `.vercel/project.json`
+  has the project/org IDs). Verify with `npx vercel ls pendelkunst` (newest deployment → Production)
+  and `npx vercel inspect <url>` (aliases must include `https://pendelkunst.vercel.app`).
+- `curl https://pendelkunst.vercel.app` returns a 403 bot-challenge (`X-Vercel-Mitigated: challenge`)
+  — you cannot verify content over plain HTTP; trust the CLI status/aliases or use a real browser.
+- Flow: commit → `git push` (keeps GitHub in sync) → `npx vercel --prod` (actually ships).
+- Pre-deploy checklist: `tsc --noEmit` clean · `npm run build` clean · headless render of presets
+  looks right · no leftover sentinel/scratch files committed.
