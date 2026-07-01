@@ -7,7 +7,7 @@ import {
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
 } from '@/lib/physics';
-import { drawThickStroke, drawSplashDot, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
+import { drawThickStroke, drawSplashSplat, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
 const PAINT_SIZE = 3072;
 const STEPS_PER_FRAME = 14;
@@ -298,14 +298,40 @@ export default function PaintCanvas({
       const rng = runRngRef.current;
       const wet = ps.wetBlend === true;
 
-      if (pointsRef.current.length >= MAX_POINTS) { cbRef.current('done'); return; }
+      // When the run ends, any droplet still in the air lands NOW — the live
+      // canvas must show every splat the export will replay.
+      const landRemainingParticles = () => {
+        const drag = splashDrag(ps.viscosity);
+        for (const p of particles.current) {
+          while (p.life > 0) {
+            p.x += p.vx; p.y += p.vy;
+            p.vy += SPLASH_GRAVITY;
+            p.vx *= drag;
+            p.vy *= drag;
+            p.life -= p.decay;
+          }
+          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
+          for (let i = 0; i < copies.length; i++) {
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i));
+          }
+        }
+        particles.current = [];
+      };
+      const finishRun = () => {
+        paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
+        landRemainingParticles();
+        paintCtx.globalCompositeOperation = 'source-over';
+        cbRef.current('done');
+      };
+
+      if (pointsRef.current.length >= MAX_POINTS) { finishRun(); return; }
 
       // Wet-on-wet: overlapping strokes multiply like real pigment on the canvas.
       paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
 
       for (let step = 0; step < STEPS_PER_FRAME; step++) {
         const t = tRef.current;
-        if (isSimulationDone(t, prepared)) { cbRef.current('done'); return; }
+        if (isSimulationDone(t, prepared)) { finishRun(); return; }
 
         const pos = calcPosition(t, prepared);
         const vel = calcVelocity(t, prepared);
@@ -316,7 +342,7 @@ export default function PaintCanvas({
 
         const centripetal = calcCentripetalAccel(vel.vx, vel.vy, prevVel.current.vx, prevVel.current.vy, DT);
         const paintLevel = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
-        if (paintLevel <= 0) { cbRef.current('done'); return; }
+        if (paintLevel <= 0) { finishRun(); return; }
 
         const flowRate = calcPaintFlowRate(centripetal, ps.viscosity, paintLevel);
         const normFlow = Math.min(flowRate / 5, 1);
@@ -403,7 +429,7 @@ export default function PaintCanvas({
                   x: particle.x, y: particle.y,
                   radius: particle.radius,
                   color: particle.color,
-                  opacity: 0.5,
+                  opacity: ps.opacity,
                   vx: particle.vx, vy: particle.vy,
                   viscosity: ps.viscosity,
                   isSplash: true,
@@ -419,8 +445,9 @@ export default function PaintCanvas({
         prevPos.current = { x: cx, y: cy };
         prevVel.current = { vx: vel.vx, vy: vel.vy };
 
-        // Advance droplets with EXACTLY the same integration the export replays
-        // (SPLASH_GRAVITY / splashDrag are shared with painter.drawSplashTrail).
+        // Droplets fly through the AIR (invisible — the bucket hangs above the
+        // canvas) and leave one opaque splat where they land. Integration is
+        // EXACTLY what the export replays (shared SPLASH_GRAVITY / splashDrag).
         const drag = splashDrag(ps.viscosity);
         particles.current = particles.current.filter(p => {
           p.x += p.vx; p.y += p.vy;
@@ -428,14 +455,11 @@ export default function PaintCanvas({
           p.vx *= drag;
           p.vy *= drag;
           p.life -= p.decay;
-          if (p.life > 0) {
-            const ppx = p.x * PAINT_SIZE, ppy = p.y * PAINT_SIZE, ppr = p.radius * PAINT_SIZE * p.life;
-            const pvx = p.vx * PAINT_SIZE, pvy = p.vy * PAINT_SIZE;
-            const copies = getSymmetryTransforms(ppx, ppy, PAINT_SIZE, sym);
-            for (let i = 0; i < copies.length; i++) {
-              drawSplashDot(paintCtx, copies[i].x, copies[i].y, ppr, p.color, p.life * 0.5, pvx, pvy, ps.viscosity, copySeed(p.seed, i));
-            }
-            return true;
+          if (p.life > 0) return true;
+          // Landed: splat.
+          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
+          for (let i = 0; i < copies.length; i++) {
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i));
           }
           return false;
         });

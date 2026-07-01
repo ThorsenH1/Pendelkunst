@@ -217,10 +217,10 @@ function strokeFineBrush(
 
   ctx.save();
 
-  const pressure = 0.3 + 0.7 / (1 + speed * 1.5);
+  const pressure = 0.45 + 0.55 / (1 + speed * 1.5);
   const r = radius * 0.4 * pressure;
 
-  ctx.globalAlpha = Math.min(opacity * (0.7 + pressure * 0.3), 1);
+  ctx.globalAlpha = Math.min(opacity * (0.85 + pressure * 0.15), 1);
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(r * 2, 0.5);
   ctx.lineCap = 'round';
@@ -268,8 +268,8 @@ function strokeFlatBrush(
     const bx2 = x2 + perpX * (spread + bristleWobble * 0.7);
     const by2 = y2 + perpY * (spread + bristleWobble * 0.7);
 
-    const bristleWidth = (r * 2 / bristleCount) * (0.6 + rng() * 0.6);
-    const bristleOpacity = opacity * (0.5 + rng() * 0.5) * (1 - Math.abs(t) * 0.4);
+    const bristleWidth = (r * 2 / bristleCount) * (0.7 + rng() * 0.6);
+    const bristleOpacity = opacity * (0.75 + rng() * 0.25) * (1 - Math.abs(t) * 0.25);
 
     ctx.globalAlpha = Math.min(bristleOpacity, 1);
     ctx.strokeStyle = varyColor(color, 0.015, rng);
@@ -297,7 +297,7 @@ function strokeFlatBrush(
   ctx.restore();
 }
 
-/** Marker/felt-tip: clean edges, consistent width, transparency layering */
+/** Marker/felt-tip: a SOLID, complete ink line with a slightly saturated core */
 function strokeMarker(
   ctx: CanvasRenderingContext2D,
   x1: number, y1: number, x2: number, y2: number,
@@ -309,20 +309,22 @@ function strokeMarker(
   ctx.save();
 
   const r = radius * 0.7;
-  const [cr, cg, cb] = parseColor(color);
 
-  ctx.globalAlpha = Math.min(opacity * 0.6, 1);
-  ctx.strokeStyle = `rgb(${cr},${cg},${cb})`;
-  ctx.lineWidth = r * 2;
-  ctx.lineCap = 'butt';
-  ctx.lineJoin = 'bevel';
+  // Full-strength ink — a real marker line is complete, never washed out.
+  ctx.globalAlpha = Math.min(opacity, 1);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(r * 2, 1);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  ctx.globalAlpha = opacity * 0.25;
-  ctx.lineWidth = r * 1.2;
+  // Ink pooling: slightly darker, saturated core.
+  ctx.globalAlpha = opacity * 0.3;
+  ctx.strokeStyle = darken(color, 0.12);
+  ctx.lineWidth = Math.max(r * 1.1, 0.6);
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
@@ -345,9 +347,9 @@ function strokeDripStick(
   // Seeded, not position-based: position-based phase creates ugly coherent
   // diagonal bands of globules across the whole painting.
   const isGlobule = rng() < 0.3 && speed < 1.5;
-  const r = isGlobule ? radius * (1.2 + rng() * 0.8) : radius * (0.15 + rng() * 0.25);
+  const r = isGlobule ? radius * (1.2 + rng() * 0.8) : radius * (0.18 + rng() * 0.25);
 
-  ctx.globalAlpha = Math.min(opacity * (isGlobule ? 0.9 : 0.65 + rng() * 0.3), 1);
+  ctx.globalAlpha = Math.min(opacity * (isGlobule ? 0.95 : 0.82 + rng() * 0.18), 1);
   ctx.strokeStyle = varyColor(color, 0.025, rng);
   ctx.lineWidth = r * 2;
   ctx.lineCap = 'round';
@@ -437,7 +439,7 @@ function strokeSpray(
   ctx.save();
 
   const sprayRadius = radius * 3;
-  const dotCount = Math.floor(4 + radius * 2 + rng() * 3);
+  const dotCount = Math.floor(5 + radius * 2 + rng() * 3);
   const [cr, cg, cb] = parseColor(color);
 
   for (let i = 0; i < dotCount; i++) {
@@ -450,9 +452,11 @@ function strokeSpray(
     const dx = mx + Math.cos(angle) * spread;
     const dy = my + Math.sin(angle) * spread;
 
-    const dotR = 0.3 + rng() * 1.5;
+    // Dot size scales with the stroke radius (resolution-independent: the old
+    // fixed-pixel size rendered differently at export resolutions).
+    const dotR = radius * (0.1 + rng() * 0.4);
     const distFromCenter = spread / sprayRadius;
-    const dotOpacity = opacity * (0.15 + rng() * 0.35) * (1 - distFromCenter * 0.5);
+    const dotOpacity = opacity * (0.55 + rng() * 0.45) * (1 - distFromCenter * 0.35);
 
     ctx.globalAlpha = Math.min(dotOpacity, 1);
     ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
@@ -461,9 +465,9 @@ function strokeSpray(
     ctx.fill();
   }
 
-  ctx.globalAlpha = opacity * 0.15;
+  ctx.globalAlpha = opacity * 0.3;
   ctx.strokeStyle = color;
-  ctx.lineWidth = radius * 0.3;
+  ctx.lineWidth = radius * 0.4;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(x1, y1);
@@ -572,10 +576,13 @@ export function drawSplashDot(
 }
 
 // ═══════════════════════════════════════════════════════════
-// SPLASH TRAIL REPLAY
-// A droplet's flight is fully deterministic given its initial
-// state, so one stored PaintPoint replays the whole trail with
-// EXACTLY the same integration as the live loop in PaintCanvas:
+// REALISTIC SPLATTER
+// A real paint droplet flies through the AIR (invisible — the
+// bucket hangs above the canvas) and leaves ONE opaque splat
+// where it LANDS: an ellipse elongated along the impact
+// direction, plus small satellite droplets thrown ahead.
+// The flight is deterministic given the initial state, so one
+// stored PaintPoint fully determines the landing.
 //   x += vx; y += vy; vy += GRAV; v *= drag; life -= decay
 // ═══════════════════════════════════════════════════════════
 
@@ -585,29 +592,78 @@ export function splashDrag(viscosity: number): number {
   return 0.96 + viscosity * 0.03;
 }
 
-/** Replay one droplet's full trajectory, drawing every step with the SAME
- *  per-step symmetry/seed logic as the live loop — pixel-identical to live. */
+/** One landed splat. (x, y, r) in pixels; (vxNorm, vyNorm) in NORMALIZED
+ *  units/step so elongation is resolution-independent. Solid paint alpha. */
+export function drawSplashSplat(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  r: number,
+  color: string,
+  opacity: number,
+  vxNorm: number, vyNorm: number,
+  viscosity: number,
+  seed: number,
+) {
+  if (r < 0.2) return;
+  const rng = mulberry32(seed);
+  ctx.save();
+
+  const speed = Math.sqrt(vxNorm * vxNorm + vyNorm * vyNorm);
+  // Fast impacts smear into elongated splats; thick paint stays rounder.
+  const elong = Math.min(speed * 900, 2.5) * (1 - viscosity * 0.4);
+  const angle = Math.atan2(vyNorm, vxNorm);
+
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  ctx.globalAlpha = Math.min(opacity * (0.88 + rng() * 0.12), 1);
+  ctx.fillStyle = varyColor(color, 0.02, rng);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r * (1.1 + elong * 0.5), r * Math.max(1.05 - elong * 0.14, 0.55), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Pointed nose in the impact direction.
+  if (elong > 0.6) {
+    ctx.beginPath();
+    ctx.ellipse(r * (0.9 + elong * 0.55), (rng() - 0.5) * r * 0.3, r * 0.45, r * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Satellite droplets thrown ahead of the main splat.
+  const satCount = r > 1 ? Math.round((rng() * 2 + elong) * (1 - viscosity * 0.5)) : 0;
+  for (let i = 0; i < satCount; i++) {
+    const dist = r * (1.8 + rng() * 3.5);
+    const off = (rng() - 0.5) * r * 1.8;
+    const sr = r * (0.12 + rng() * 0.22);
+    ctx.globalAlpha = Math.min(opacity * (0.8 + rng() * 0.2), 1);
+    ctx.beginPath();
+    ctx.arc(dist, off, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/** Replay one droplet's deterministic flight (drawing nothing in the air) and
+ *  draw the landing splat — EXACTLY the same integration as the live loop. */
 export function drawSplashTrail(
   ctx: CanvasRenderingContext2D,
-  p: { x: number; y: number; vx: number; vy: number; radius: number; color: string; decay: number; seed: number },
+  p: { x: number; y: number; vx: number; vy: number; radius: number; color: string; opacity: number; decay: number; seed: number },
   viscosity: number,
   canvasSize: number,
   symmetry: SymmetrySettings,
 ) {
   let x = p.x, y = p.y, vx = p.vx, vy = p.vy, life = 1;
   const drag = splashDrag(viscosity);
-  while (true) {
+  while (life > 0) {
     x += vx; y += vy;
     vy += SPLASH_GRAVITY;
     vx *= drag; vy *= drag;
     life -= p.decay;
-    if (life <= 0) break;
-    const ppx = x * canvasSize, ppy = y * canvasSize, ppr = p.radius * life * canvasSize;
-    const pvx = vx * canvasSize, pvy = vy * canvasSize;
-    const copies = getSymmetryTransforms(ppx, ppy, canvasSize, symmetry);
-    for (let i = 0; i < copies.length; i++) {
-      drawSplashDot(ctx, copies[i].x, copies[i].y, ppr, p.color, life * 0.5, pvx, pvy, viscosity, copySeed(p.seed, i));
-    }
+  }
+  const copies = getSymmetryTransforms(x * canvasSize, y * canvasSize, canvasSize, symmetry);
+  for (let i = 0; i < copies.length; i++) {
+    drawSplashSplat(ctx, copies[i].x, copies[i].y, p.radius * canvasSize, p.color, p.opacity, vx, vy, viscosity, copySeed(p.seed, i));
   }
 }
 
@@ -685,10 +741,10 @@ function renderOnePoint(
 
   if (p.isSplash) {
     if (p.decay != null) {
-      // Trail point: replay the droplet's whole deterministic flight.
+      // Droplet point: replay the deterministic flight, splat at the landing.
       drawSplashTrail(
         ctx,
-        { x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0, radius: p.radius, color: p.color, decay: p.decay, seed: baseSeed },
+        { x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0, radius: p.radius, color: p.color, opacity: p.opacity, decay: p.decay, seed: baseSeed },
         visc, canvasSize, symmetry,
       );
       ctx.globalCompositeOperation = 'source-over';

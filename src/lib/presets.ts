@@ -111,7 +111,7 @@ export const presets: PresetConfig[] = [
           { offsetX: -0.02, offsetY: 0.035, color: '#bb3e03', thickness: 1.1 },
           { offsetX: -0.02, offsetY: -0.035, color: '#0a9396', thickness: 0.8 },
         ],
-        baseThickness: 4.5, brushType: 'marker', splashEnabled: true, splashIntensity: 0.45, opacity: 0.8, viscosity: 0.3, bucketCapacity: 90,
+        baseThickness: 3.4, brushType: 'marker', splashEnabled: true, splashIntensity: 0.45, opacity: 0.8, viscosity: 0.3, bucketCapacity: 90,
       },
       dropPosition: { x: 0.9, y: -0.2 },
       throwMode: 'throw-ccw',

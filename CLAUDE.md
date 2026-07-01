@@ -62,10 +62,17 @@ Export must be **pixel-identical (scaled) to the live canvas**. This is achieved
   baked into the stored point's coordinates/radius; texture randomness is seeded.)
 - Each `PaintPoint` carries a `seed`. Live and export both derive per-symmetry-copy seeds with
   `copySeed(seed, i)`. Same seed in → same pixels out.
-- Splash droplets store ONE trail point each (2026-07): `x, y, vx, vy, radius, decay, isSplash` are
-  the INITIAL state; `drawSplashTrail` replays the whole deterministic flight with the exact same
-  integration/constants as the live loop (`SPLASH_GRAVITY`, `splashDrag` — shared exports; never
-  fork these). Legacy per-step splash points (`decay == null`) still render as single dots.
+- Splash droplets store ONE point each (2026-07): `x, y, vx, vy, radius, decay, isSplash` are the
+  INITIAL state. Droplets fly through the AIR (nothing drawn in flight — the bucket hangs above
+  the canvas) and land as ONE opaque splat (`drawSplashSplat`: elongated ellipse + satellites).
+  `drawSplashTrail` replays the flight with the exact same integration/constants as the live loop
+  (`SPLASH_GRAVITY`, `splashDrag` — shared exports; never fork these). When a run ends with
+  droplets mid-air, `finishRun` in PaintCanvas lands them immediately (live must show every splat
+  the export replays). Legacy per-step splash points (`decay == null`) render as single dots.
+- **Paint is OPAQUE (2026-07 — user-driven fix "alt er for svakt"):** `calcDropOpacity` keeps alpha
+  at 0.82–0.95× the paint's own opacity (speed thins the LINE WIDTH via 1/√v mass conservation in
+  `calcDropRadius`, it does not fade the color). Marker draws a full-strength solid line (round
+  caps — butt caps left notches). Do not reintroduce speed→transparency coupling.
 - Stroke points store `fromX/fromY, brushType, viscosity, speed`; segments shorter than
   `MIN_SEGMENT` (0.4px) are merged in `PaintCanvas` — the dying pendulum otherwise emits millions
   of invisible micro-segments (this was why runs hit MAX_POINTS early and "ended too soon").

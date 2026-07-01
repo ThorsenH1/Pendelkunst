@@ -197,19 +197,24 @@ export function calcPaintFlowRate(centripetal: number, viscosity: number, paintL
   return torricelli / (1 + viscosity * 2);
 }
 
-/** Drop radius: thicker when slow (pooling), thinner when fast (stretching) */
+/** Drop radius: thicker when slow (pooling), thinner when fast (stretching).
+ *  Mass conservation: the stream's cross-section shrinks with speed, so the
+ *  laid-down line width goes as 1/√v — NOT 1/v, which starved fast lines. */
 export function calcDropRadius(baseThickness: number, holeThickness: number, speed: number, height: number, flowRate: number, viscosity: number): number {
   const holeRadius = baseThickness * holeThickness * 0.002;
-  const speedStretch = 1 / (1 + speed * 2.5);
+  const speedStretch = 1 / Math.sqrt(1 + speed * 2.5);
   const heightSpread = 1 + Math.max(height, 0) * 0.4;
   const flowFactor = 0.3 + flowRate * 0.7;
   const viscositySpread = 0.7 + (1 - viscosity) * 0.6;
   return holeRadius * speedStretch * heightSpread * flowFactor * viscositySpread;
 }
 
+/** Acrylic is OPAQUE: speed makes the line thinner, it does NOT make it
+ *  translucent. Opacity stays close to the paint's own opacity, with only a
+ *  slight easing when the stream is stretched thin or the flow is dying. */
 export function calcDropOpacity(baseOpacity: number, radius: number, baseRadius: number, flowRate: number): number {
-  const sizeRatio = Math.min(radius / Math.max(baseRadius, 0.0001), 2);
-  return Math.min(baseOpacity * (0.4 + sizeRatio * 0.4) * (0.5 + flowRate * 0.5), 1);
+  const sizeRatio = Math.min(radius / Math.max(baseRadius, 0.0001), 1);
+  return Math.min(baseOpacity * (0.82 + sizeRatio * 0.13) * (0.9 + flowRate * 0.1), 1);
 }
 
 export function calcCentripetalAccel(vx: number, vy: number, prevVx: number, prevVy: number, dt: number): number {
