@@ -7,7 +7,7 @@ import {
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
 } from '@/lib/physics';
-import { drawThickStroke, drawSplashDot, getSymmetryTransforms, copySeed } from '@/lib/painter';
+import { drawThickStroke, drawSplashDot, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng } from '@/lib/painter';
 
 const PAINT_SIZE = 2048;
 const STEPS_PER_FRAME = 14;
@@ -48,9 +48,16 @@ export default function PaintCanvas({
   const prevHoleNorm = useRef<Map<number, { x: number; y: number }>>(new Map());
   const prevStateRef = useRef<SimulationState>('idle');
   const seedRef = useRef(1);
+  // Per-run seeded rng: jitter and splash decisions are reproducible from settings.seed.
+  const runRngRef = useRef<Rng>(mulberry32(1));
+  const layerIndexRef = useRef(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
   const [canvasSize, setCanvasSize] = useState(600);
   const [dpr, setDpr] = useState(1);
   const [hoveredDrop, setHoveredDrop] = useState<DropPosition | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recSupported, setRecSupported] = useState(false);
 
   const nextSeed = () => {
     const s = seedRef.current;
@@ -58,7 +65,14 @@ export default function PaintCanvas({
     return s;
   };
 
-  useEffect(() => { setDpr(window.devicePixelRatio || 1); }, []);
+  useEffect(() => {
+    setDpr(window.devicePixelRatio || 1);
+    setRecSupported(
+      typeof MediaRecorder !== 'undefined' &&
+      typeof HTMLCanvasElement !== 'undefined' &&
+      'captureStream' in HTMLCanvasElement.prototype,
+    );
+  }, []);
 
   useEffect(() => { sRef.current = settings; }, [settings]);
   useEffect(() => { stateRef.current = simState; }, [simState]);
@@ -117,6 +131,7 @@ export default function PaintCanvas({
     ctx.clearRect(0, 0, PAINT_SIZE, PAINT_SIZE);
     ctx.fillStyle = sRef.current.backgroundColor;
     ctx.fillRect(0, 0, PAINT_SIZE, PAINT_SIZE);
+    drawPaperTexture(ctx, PAINT_SIZE, sRef.current.paperTexture ?? 0);
   }, []);
 
   // Reset just the per-run simulation state (keeps canvas + accumulated points).
@@ -143,13 +158,22 @@ export default function PaintCanvas({
       resetRun();
       pointsRef.current = [];
       seedRef.current = 1;
+      layerIndexRef.current = 0;
       clearPaint();
       blit();
     } else if (simState === 'running') {
       if (prev === 'done' || prev === 'idle') {
         resetRun();
+        // New run/layer: derive a fresh deterministic rng from the settings seed
+        // and the layer index, so layers differ but the whole piece replays from one seed.
+        layerIndexRef.current += 1;
+        const base = (sRef.current.seed ?? 1) >>> 0;
+        runRngRef.current = mulberry32((Math.imul(base, 2654435761) + layerIndexRef.current * 7919) >>> 0);
       }
       // prev === 'paused' -> resume seamlessly: keep tRef and all run state.
+    } else if (simState === 'done') {
+      // Wipe the rig/HUD overlay so the finished painting shows clean.
+      blit();
     }
 
     prevStateRef.current = simState;
@@ -158,7 +182,7 @@ export default function PaintCanvas({
   // ── Repaint background when idle ──
   useEffect(() => {
     if (simState === 'idle') { clearPaint(); blit(); }
-  }, [settings.backgroundColor, simState, clearPaint, blit]);
+  }, [settings.backgroundColor, settings.paperTexture, simState, clearPaint, blit]);
 
   // ── Load saved painting image ──
   useEffect(() => {
@@ -174,6 +198,52 @@ export default function PaintCanvas({
       onImageLoaded?.();
     });
   }, [loadImage, blit, onImageLoaded]);
+
+  // ── Video recording of the painting process (display canvas → webm) ──
+  const startRecording = useCallback(() => {
+    const canvas = displayRef.current;
+    if (!canvas || recorderRef.current) return;
+    try {
+      const stream = canvas.captureStream(30);
+      const mime = ['video/webm;codecs=vp9', 'video/webm', 'video/mp4']
+        .find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8_000_000 } : undefined);
+      recChunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        const type = rec.mimeType || 'video/webm';
+        const blob = new Blob(recChunksRef.current, { type });
+        recChunksRef.current = [];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `pendelkunst-video.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      rec.start(500);
+      recorderRef.current = rec;
+      setRecording(true);
+    } catch {
+      setRecording(false);
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    const rec = recorderRef.current;
+    recorderRef.current = null;
+    setRecording(false);
+    if (rec && rec.state !== 'inactive') rec.stop();
+  }, []);
+
+  // Stop cleanly if the component unmounts mid-recording.
+  useEffect(() => () => {
+    const rec = recorderRef.current;
+    if (rec && rec.state !== 'inactive') rec.stop();
+  }, []);
 
   // ── Click to set drop position (idle/done only) ──
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -220,8 +290,13 @@ export default function PaintCanvas({
       const sym = s.symmetry;
       const drop = s.dropPosition;
       const prepared = prepareHarmonograph(s.pendulum, drop, s.throwMode, s.throwSpeed);
+      const rng = runRngRef.current;
+      const wet = ps.wetBlend === true;
 
       if (pointsRef.current.length >= MAX_POINTS) { cbRef.current('done'); return; }
+
+      // Wet-on-wet: overlapping strokes multiply like real pigment on the canvas.
+      paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
 
       for (let step = 0; step < STEPS_PER_FRAME; step++) {
         const t = tRef.current;
@@ -254,9 +329,9 @@ export default function PaintCanvas({
           const opacity = calcDropOpacity(ps.opacity, radius, baseR, normFlow);
 
           const turb = (1 - ps.viscosity) * 0.3;
-          const jx = (Math.random() - 0.5) * radius * turb;
-          const jy = (Math.random() - 0.5) * radius * turb;
-          const jr = radius * (0.85 + Math.random() * 0.3);
+          const jx = (rng() - 0.5) * radius * turb;
+          const jy = (rng() - 0.5) * radius * turb;
+          const jr = radius * (0.85 + rng() * 0.3);
 
           const px = (hx + jx) * PAINT_SIZE;
           const py = (hy + jy) * PAINT_SIZE;
@@ -289,23 +364,24 @@ export default function PaintCanvas({
             brushType: ps.brushType,
             speed,
             seed: strokeSeed,
+            blend: wet || undefined,
           });
           prevHoleNorm.current.set(h, { x: normX, y: normY });
           totalFlow.current += normFlow * DT * 0.01;
 
           if (ps.splashEnabled && prevPos.current) {
             const sp = shouldSplash(speed, radius, ps.viscosity, ps.splashIntensity);
-            if (sp.splash && Math.random() < 0.35) {
+            if (sp.splash && rng() < 0.35) {
               const moveAngle = Math.atan2(vel.vy, vel.vx);
               for (let p = 0; p < sp.particleCount; p++) {
-                const angle = moveAngle + (Math.random() - 0.5) * Math.PI * 1.5;
-                const pv = 0.0003 + Math.random() * sp.maxSpeed * 0.01;
-                const sizePow = Math.pow(Math.random(), 2.5);
+                const angle = moveAngle + (rng() - 0.5) * Math.PI * 1.5;
+                const pv = 0.0003 + rng() * sp.maxSpeed * 0.01;
+                const sizePow = Math.pow(rng(), 2.5);
                 const splashR = jr * (0.03 + sizePow * 0.35);
                 particles.current.push({
                   x: hx, y: hy, vx: Math.cos(angle) * pv, vy: Math.sin(angle) * pv,
                   radius: splashR, color: hole.color, life: 1,
-                  decay: 0.015 + Math.random() * 0.05 + ps.viscosity * 0.03,
+                  decay: 0.015 + rng() * 0.05 + ps.viscosity * 0.03,
                   seed: nextSeed(),
                 });
               }
@@ -338,6 +414,7 @@ export default function PaintCanvas({
               viscosity: ps.viscosity,
               isSplash: true,
               seed: p.seed,
+              blend: wet || undefined,
             });
             return true;
           }
@@ -347,6 +424,7 @@ export default function PaintCanvas({
         tRef.current += DT * s.speed;
       }
 
+      paintCtx.globalCompositeOperation = 'source-over';
       blit();
 
       const display = displayRef.current;
@@ -359,12 +437,70 @@ export default function PaintCanvas({
 
           const ix = (0.5 + pos.x * SCALE + co.ox) * display.width;
           const iy = (0.5 + pos.y * SCALE + co.oy) * display.height;
-          ctx.globalAlpha = 0.35;
-          ctx.strokeStyle = '#fff';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(ix, iy, 6, 0, Math.PI * 2);
-          ctx.stroke();
+
+          if (sRef.current.showRig !== false) {
+            // Pendulum rig seen from above: pivot at center, string to the bob,
+            // the bob drawn as a paint container. Shadow offset grows with swing height.
+            const cx = display.width / 2, cy = display.height / 2;
+            const bobR = Math.max(display.width * 0.014, 7);
+            const h = calcBobHeight(pos.x, pos.y, sRef.current.pendulum.stringLength);
+            const bobColor = ps.holes[0]?.color ?? '#333';
+
+            // Shadow on the canvas beneath the bob
+            ctx.globalAlpha = 0.18 * (1 - h * 0.5);
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.ellipse(ix + bobR * 0.35 + h * bobR, iy + bobR * 0.5 + h * bobR, bobR * (1 + h * 0.6), bobR * (0.8 + h * 0.5), 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // String from pivot to bob
+            ctx.globalAlpha = 0.4;
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(ix, iy);
+            ctx.stroke();
+
+            // Pivot marker
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = '#e5e7eb';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Paint container (bob)
+            ctx.globalAlpha = 0.92;
+            ctx.fillStyle = bobColor;
+            ctx.beginPath();
+            ctx.arc(ix, iy, bobR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 0.8;
+            ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(ix, iy, bobR, 0, Math.PI * 2);
+            ctx.stroke();
+            // Rim highlight + outlet hole
+            ctx.globalAlpha = 0.5;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(ix, iy, bobR * 0.72, -Math.PI * 0.85, -Math.PI * 0.25);
+            ctx.stroke();
+            ctx.globalAlpha = 0.85;
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.beginPath();
+            ctx.arc(ix, iy, bobR * 0.18, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.globalAlpha = 0.35;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
 
           const pl = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
           const bw = 4, bh = 50, bx = display.width - 16, by = 12;
@@ -411,9 +547,25 @@ export default function PaintCanvas({
           onClick={handleCanvasClick}
           onMouseMove={handleCanvasMove}
           onMouseLeave={() => setHoveredDrop(null)}
-          aria-label="Pendelmaleri-lerret. Klikk for a plassere pendelens slipp-punkt."
+          aria-label="Pendelmaleri-lerret. Klikk for å plassere pendelens slipp-punkt."
           role="img"
         />
+
+        {recSupported && (simState === 'running' || simState === 'paused' || recording) && (
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            aria-pressed={recording}
+            aria-label={recording ? 'Stopp videoopptak og last ned' : 'Start videoopptak av maleprosessen'}
+            className={`absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur transition-colors ${
+              recording
+                ? 'bg-red-600/90 text-white hover:bg-red-500'
+                : 'bg-gray-900/80 text-gray-300 hover:bg-gray-800'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${recording ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
+            {recording ? 'Stopp opptak' : 'Ta opp video'}
+          </button>
+        )}
 
         {showDrop && (
           <>
@@ -468,8 +620,8 @@ export default function PaintCanvas({
             <div className="absolute bottom-3 left-0 right-0 text-center">
               <span className="text-[11px] bg-gray-900/80 backdrop-blur text-gray-400 px-3 py-1.5 rounded-full">
                 {isThrow
-                  ? 'Klikk for a plassere - pendelen kastes i sirkelbevegelse'
-                  : 'Klikk for a plassere pendelen - lenger ut = mer energi'}
+                  ? 'Klikk for å plassere — pendelen kastes i sirkelbevegelse'
+                  : 'Klikk for å plassere pendelen — lenger ut = mer energi'}
               </span>
             </div>
           </>

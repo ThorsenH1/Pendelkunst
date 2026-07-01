@@ -45,6 +45,8 @@ export default function ExportDialog({ pointsRef, settings, onClose }: Props) {
         settings.symmetry,
         settings.backgroundColor,
         (f) => setProgress(f),
+        undefined,
+        settings.paperTexture ?? 0,
       );
 
       setMsg('Konverterer...');

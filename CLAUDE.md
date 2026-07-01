@@ -37,10 +37,20 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
 - `drop`: gentle fixed perpendicular nudge (`ω0 · dist · 0.7`, CCW). A real hand-release is never
   perfectly radial, so the swing opens into a precessing ellipse = the classic rosette. **Never let
   `drop` produce a pure straight line** — that's the degenerate, ugly case.
-- **frequencyRatio ≈ 1.0–1.09 is the physically realistic AND most beautiful range** (a real
-  Y-pendulum's two effective lengths are nearly equal → slow precession → rosette/spiral).
-  Simple fractions (3:2, 5:3, 2:1) are harmonograph territory and tend to look like comets/bowties
-  here unless the box is squared (throwSpeed ≈ ratio). Prefer near-1.0 ratios for presets.
+- **Airy precession is what makes it ROUND (2026-07 upgrade — the second most important insight):**
+  a plain detuned oscillator (`ratio 1.02`) does NOT rotate the ellipse — it drifts the relative
+  phase, which alternates ellipse ↔ diagonal line and fills a SQUARE envelope (the boxy/bowtie
+  failure mode). A real spherical pendulum's orbit instead ROTATES in the circulation direction at
+  `Ω = ⅜·ω·a·b/L²`. `physics.ts` implements this: `Ω₀ = 0.375·K²·Lz` (Lz = x₀vy₀ − y₀vx₀,
+  `PRECESS_K2 = 0.32`), accumulated as `θ(t) = Ω₀(1−e^(−2γt))/(2γ)` and applied as a rotation in
+  `calcPosition`/`calcVelocity`. **This is what draws round rosettes. Do not remove it.**
+- **frequencyRatio: keep presets at 1.000–1.006.** With precession doing the rosette work, larger
+  detuning (≥1.01) shears the pattern into moiré bands / fills the middle with a solid blob over a
+  long run. 1.0907 (Kaotisk) is a deliberate airy woven-web look. Simple fractions (3:2, 5:3, 2:1)
+  are Lissajous territory and now slowly rotate — usable for variety.
+- The dense center that appears late in a run is the pendulum settling (physically real); control
+  its size with damping (ends the run sooner) — bucketCapacity mostly does NOT bind because
+  Torricelli flow slows as the bucket empties.
 - `calcBobHeight` must depend on L (longer string → smaller swing angle → flatter arc → less spread).
 
 ## 3. WYSIWYG export — the core invariant (READ BEFORE TOUCHING `painter.ts`)
@@ -94,26 +104,30 @@ canvas+points (new layer). `running ↔ paused` must **continue** (never reset `
 
 ## 6. Roadmap — how to make it even better (priority order)
 
-1. **Per-preset visual QA**: a few presets are good-but-improvable (Geometrisk/Blomst/Zen). Tune via
-   the headless harness (see §7) until each fills tastefully. Consider a `previewThumbnail` per preset.
-2. **Optional canvas/paper texture** (subtle grain) and a faint drop-shadow on dry paint for realism.
-   Add as an off-by-default toggle so presets are unaffected.
-3. **Wet-on-wet color blending** where strokes overlap (multiply/▒ blend zones) for true paint feel.
-4. **Shareable links / server gallery** (would need a backend; today gallery is local).
-5. **Video/GIF capture** of the painting being drawn.
-6. **Pendulum rig visualization** (show the swinging bob + string) as an optional overlay for realism/teaching.
-7. **i18n** (English toggle) to widen reach.
-8. **Determinism seed surfaced in UI** ("seed: 12345") so a piece is fully reproducible/shareable.
-9. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
+DONE (2026-07): Airy precession physics (§2) · per-preset QA (all 8 + Default verified round &
+canvas-filling via headless montage) · paper texture toggle (`paperTexture`, deterministic, in
+export) · wet-on-wet multiply blending (`paint.wetBlend`, stored per point as `blend`) · pendulum
+rig overlay (`showRig`, display-only) · video capture (MediaRecorder → WebM/MP4 on the display
+canvas) · seed surfaced in UI (`settings.seed`; run rng = `mulberry32(imul(seed,2654435761)+layer·7919)`)
+· "Slik gjør du det hjemme" help dialog.
+
+Remaining:
+1. **Shareable links** — encode `settings` (incl. seed) in a URL query/fragment; no backend needed
+   for reproduction since a piece = settings + seed. (Server gallery would need a backend.)
+2. **i18n** (English toggle) to widen reach.
+3. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
+4. Preset `previewThumbnail`s in the picker.
+5. Faint drop-shadow on dry paint (off-by-default).
 
 ## 7. How to develop & VERIFY in this environment (important gotchas)
 
-- **The repo lives on a OneDrive-synced folder.** The Linux shell mount serves a *session-start
-  snapshot* for pre-existing files: edits made with the file-tools (Write/Edit) are NOT visible to
-  `bash`/`tsc`/`git`. **Author via `bash` here** (bash reads its own writes; git + the real Windows
-  file then see them). New files written by the file-tool ARE visible to bash.
-- **Type-check fast:** `./node_modules/.bin/tsc --noEmit` (a full `next build` exceeds the 45s shell cap;
-  Vercel runs it on deploy). `npm run lint` for ESLint.
+- **OneDrive gotcha (environment-dependent):** in the Linux-mount environment, file-tool edits to
+  pre-existing files are NOT visible to `bash`/`tsc`/`git` — author via `bash` there. In a native
+  Windows session (PowerShell/Git Bash) the file tools and shell see the same files; verify once
+  with `git diff --stat` after the first edit and proceed normally.
+- **Type-check fast:** `./node_modules/.bin/tsc --noEmit` (a full `next build` may exceed the shell
+  timeout; Vercel runs it on deploy). There is NO ESLint config in the repo — `npm run lint` prompts
+  interactively; don't run it, rely on tsc.
 - **Visual verification (do this for any physics/paint change):** transpile the lib and render PNGs
   headlessly with `@napi-rs/canvas` (prebuilt, no system deps), then inspect:
   ```

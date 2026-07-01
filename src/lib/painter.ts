@@ -48,6 +48,58 @@ function varyColor(hex: string, amount: number, rng: Rng): string {
   return `rgb(${vary(r)},${vary(g)},${vary(b)})`;
 }
 
+// ═══════════════════════════════════════════════════════════
+// PAPER / CANVAS TEXTURE
+// Deterministic grain drawn under the paint. Speck/fiber COUNTS
+// are fixed (not size-dependent) and positions come from one
+// seeded rng, so live 2048px and any export size render the
+// same normalized pattern — the WYSIWYG invariant holds.
+// ═══════════════════════════════════════════════════════════
+
+const TEXTURE_SEED = 0xc0ffee;
+
+export function drawPaperTexture(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  strength: number,
+) {
+  if (strength <= 0) return;
+  const rng = mulberry32(TEXTURE_SEED);
+  ctx.save();
+
+  // Fine tooth: tiny specks, half darker / half lighter than the ground.
+  const speckCount = 9000;
+  for (let i = 0; i < speckCount; i++) {
+    const x = rng() * size;
+    const y = rng() * size;
+    const r = (0.3 + rng() * 0.9) * (size / 2048);
+    const dark = rng() < 0.5;
+    ctx.globalAlpha = strength * (0.015 + rng() * 0.035);
+    ctx.fillStyle = dark ? '#000000' : '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Weave fibers: faint short horizontal/vertical threads, like canvas weave.
+  const fiberCount = 260;
+  for (let i = 0; i < fiberCount; i++) {
+    const x = rng() * size;
+    const y = rng() * size;
+    const len = (10 + rng() * 60) * (size / 2048);
+    const horizontal = rng() < 0.5;
+    ctx.globalAlpha = strength * (0.008 + rng() * 0.02);
+    ctx.strokeStyle = rng() < 0.5 ? '#000000' : '#ffffff';
+    ctx.lineWidth = (0.4 + rng() * 0.7) * (size / 2048);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (horizontal ? len : 0), y + (horizontal ? 0 : len));
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 // ── Symmetry ──
 
 export function getSymmetryTransforms(x: number, y: number, size: number, sym: SymmetrySettings): Array<{ x: number; y: number }> {
@@ -273,8 +325,9 @@ function strokeDripStick(
 
   ctx.save();
 
-  const dripPhase = Math.sin((x1 + y1) * 0.03) * 0.5 + 0.5;
-  const isGlobule = dripPhase > 0.65 && speed < 1.5;
+  // Seeded, not position-based: position-based phase creates ugly coherent
+  // diagonal bands of globules across the whole painting.
+  const isGlobule = rng() < 0.3 && speed < 1.5;
   const r = isGlobule ? radius * (1.2 + rng() * 0.8) : radius * (0.15 + rng() * 0.25);
 
   ctx.globalAlpha = Math.min(opacity * (isGlobule ? 0.9 : 0.65 + rng() * 0.3), 1);
@@ -570,14 +623,18 @@ function renderOnePoint(
   const spd = p.speed ?? 0;
   const baseSeed = p.seed ?? 1;
 
+  // Wet-on-wet points composite with multiply, like real pigment layering.
+  ctx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
+
   if (p.isSplash) {
-    if (r < 0.15) return;
+    if (r < 0.15) { ctx.globalCompositeOperation = 'source-over'; return; }
     const vx = (p.vx ?? 0) * canvasSize;
     const vy = (p.vy ?? 0) * canvasSize;
     const copies = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
     for (let i = 0; i < copies.length; i++) {
       drawSplashDot(ctx, copies[i].x, copies[i].y, r, p.color, p.opacity, vx, vy, visc, copySeed(baseSeed, i));
     }
+    ctx.globalCompositeOperation = 'source-over';
     return;
   }
 
@@ -593,6 +650,7 @@ function renderOnePoint(
       }
     }
   }
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 /** Synchronous render — fine for small/medium sizes and tests. */
@@ -602,9 +660,11 @@ export function renderPointsHighRes(
   canvasSize: number,
   symmetry: SymmetrySettings,
   backgroundColor: string,
+  paperTexture = 0,
 ) {
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, canvasSize, canvasSize);
+  drawPaperTexture(ctx, canvasSize, paperTexture);
   for (const p of points) renderOnePoint(ctx, p, canvasSize, symmetry);
 }
 
@@ -617,9 +677,11 @@ export async function renderPointsHighResAsync(
   backgroundColor: string,
   onProgress?: (fraction: number) => void,
   chunkSize = 4000,
+  paperTexture = 0,
 ): Promise<void> {
   ctx.fillStyle = backgroundColor;
   ctx.fillRect(0, 0, canvasSize, canvasSize);
+  drawPaperTexture(ctx, canvasSize, paperTexture);
 
   const total = points.length;
   for (let start = 0; start < total; start += chunkSize) {

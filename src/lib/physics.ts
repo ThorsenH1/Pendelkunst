@@ -82,10 +82,31 @@ function pendulumToHarmonograph(
   const Ry = Math.sqrt(Ay * Ay + By * By) || 0.001;
   const phiY = Math.atan2(Ay, By);
 
+  // ── Airy precession (the physics behind REAL pendulum-art rosettes) ──
+  // A spherical pendulum on an elliptical orbit precesses in the direction of
+  // circulation at Ω = (3/8)·ω·(a·b)/L² (a, b = angular semi-axes). For the
+  // isotropic part of the motion, a·b = |Lz|/ω where Lz = x₀vy₀ − y₀vx₀, so
+  // Ω₀ = (3/8)·K²·Lz with K² converting normalized canvas units to radians².
+  // This ROTATES the decaying ellipse instead of shearing it — round rosettes,
+  // not the square Lissajous envelope a plain detuned oscillator produces.
+  const Lz = x0 * vy0 - y0 * vx0;
+  const PRECESS_K2 = 0.32;
+  const precessionRate = 0.375 * PRECESS_K2 * Lz;
+
   return {
     xComponents: [{ amplitude: Rx, frequency: omegaDX, phase: phiX, damping: gamma }],
     yComponents: [{ amplitude: Ry, frequency: omegaDY, phase: phiY, damping: gamma }],
+    precessionRate,
+    precessionDamping: gamma,
   };
+}
+
+/** Accumulated precession angle: θ(t) = Ω₀·(1 − e^(−2γt))/(2γ) — slows as the swing dies. */
+function precessionAngle(t: number, config: HarmonographConfig): number {
+  const rate = config.precessionRate ?? 0;
+  if (rate === 0) return 0;
+  const g2 = 2 * (config.precessionDamping ?? 0);
+  return g2 < 1e-9 ? rate * t : rate * (1 - Math.exp(-g2 * t)) / g2;
 }
 
 /** Prepare the internal harmonograph config from physical pendulum parameters */
@@ -101,14 +122,25 @@ export function prepareHarmonograph(
 export function calcPosition(t: number, config: HarmonographConfig) {
   const x = evalComponents(config.xComponents, t);
   const y = evalComponents(config.yComponents, t);
-  return { x, y };
+  const th = precessionAngle(t, config);
+  if (th === 0) return { x, y };
+  const c = Math.cos(th), s = Math.sin(th);
+  return { x: x * c - y * s, y: x * s + y * c };
 }
 
 export function calcVelocity(t: number, config: HarmonographConfig) {
-  return {
-    vx: evalDerivative(config.xComponents, t),
-    vy: evalDerivative(config.yComponents, t),
-  };
+  const vx = evalDerivative(config.xComponents, t);
+  const vy = evalDerivative(config.yComponents, t);
+  const th = precessionAngle(t, config);
+  if (th === 0) return { vx, vy };
+  // d/dt[R(θ)p] = R(θ)(v + θ'·J·p), J·p = (−y, x)
+  const x = evalComponents(config.xComponents, t);
+  const y = evalComponents(config.yComponents, t);
+  const rate = (config.precessionRate ?? 0) * Math.exp(-2 * (config.precessionDamping ?? 0) * t);
+  const ux = vx - rate * y;
+  const uy = vy + rate * x;
+  const c = Math.cos(th), s = Math.sin(th);
+  return { vx: ux * c - uy * s, vy: ux * s + uy * c };
 }
 
 /** Pendulum bob height above lowest point (0 at center, >0 at extremes).

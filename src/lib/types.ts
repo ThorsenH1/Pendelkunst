@@ -8,6 +8,12 @@ export interface PendulumComponent {
 export interface HarmonographConfig {
   xComponents: PendulumComponent[];
   yComponents: PendulumComponent[];
+  /** Airy precession rate Ω₀ (rad/s, signed by orbit direction). A real spherical
+   *  pendulum's elliptical orbit ROTATES slowly (Ω = ⅜·ω·a·b/L²) — this is what turns
+   *  a decaying ellipse into the round rosettes of real pendulum painting. */
+  precessionRate?: number;
+  /** Amplitude damping γ — precession slows as e^(-2γt) since Ω ∝ a·b. */
+  precessionDamping?: number;
 }
 
 /** Physical pendulum configuration — all art is derived from these real-world parameters */
@@ -40,6 +46,9 @@ export interface PaintSettings {
   opacity: number;
   viscosity: number;
   bucketCapacity: number;
+  /** Wet-on-wet blending: overlapping strokes multiply like real pigment. Optional for
+   *  backward compatibility with gallery-stored settings (treated as false). */
+  wetBlend?: boolean;
 }
 
 export interface SymmetrySettings {
@@ -73,6 +82,12 @@ export interface SimulationSettings {
   throwSpeed: number;
   speed: number;
   backgroundColor: string;
+  /** Canvas/paper grain strength 0–1 (0 = off). Deterministic, included in export. */
+  paperTexture?: number;
+  /** Run seed: same seed + same settings → pixel-identical painting (reproducible art). */
+  seed?: number;
+  /** Show the swinging pendulum rig (string + paint container) while painting. UI-only. */
+  showRig?: boolean;
 }
 
 export interface PaintPoint {
@@ -93,6 +108,8 @@ export interface PaintPoint {
   vy?: number;
   /** True for splash droplets (rendered with drawSplashDot, not as a stroke). */
   isSplash?: boolean;
+  /** Wet-on-wet: render this point with multiply compositing (real pigment mixing). */
+  blend?: boolean;
 }
 
 export interface SplashParticle {

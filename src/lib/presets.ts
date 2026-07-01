@@ -16,6 +16,7 @@ export function createDefaultSettings(): SimulationSettings {
       opacity: 0.85,
       viscosity: 0.5,
       bucketCapacity: 55,
+      wetBlend: false,
     },
     symmetry: { mode: 'none', rotationalOrder: 4 },
     canvasMotion: { mode: 'still', speed: 1, amplitude: 0.3, damping: 0.003 },
@@ -24,7 +25,15 @@ export function createDefaultSettings(): SimulationSettings {
     throwSpeed: 1,
     speed: 1,
     backgroundColor: '#faf8f5',
+    paperTexture: 0,
+    seed: 1,
+    showRig: true,
   };
+}
+
+/** Random seed in a friendly, typeable range. */
+export function newSeed(): number {
+  return 1 + Math.floor(Math.random() * 999_998);
 }
 
 export const presets: PresetConfig[] = [
@@ -51,7 +60,7 @@ export const presets: PresetConfig[] = [
     description: 'Lang snor og jordfarger — rolig, naturlig rosett',
     emoji: '🌿',
     settings: {
-      pendulum: { stringLength: 1.5, frequencyRatio: 1.028, damping: 0.0024 },
+      pendulum: { stringLength: 1.5, frequencyRatio: 1.006, damping: 0.0024 },
       paint: {
         holes: [
           { offsetX: 0, offsetY: 0, color: '#606c38', thickness: 1.1 },
@@ -69,13 +78,13 @@ export const presets: PresetConfig[] = [
     description: 'Tette, presise linjer som tegner skarpe figurer',
     emoji: '📐',
     settings: {
-      pendulum: { stringLength: 0.95, frequencyRatio: 1.05, damping: 0.0022 },
+      pendulum: { stringLength: 0.95, frequencyRatio: 1.005, damping: 0.003 },
       paint: {
         holes: [
           { offsetX: 0, offsetY: 0, color: '#264653', thickness: 1.0 },
           { offsetX: 0.02, offsetY: 0.02, color: '#2a9d8f', thickness: 0.8 },
         ],
-        baseThickness: 3.2, brushType: 'bucket', splashEnabled: false, splashIntensity: 0, opacity: 0.8, viscosity: 0.45, bucketCapacity: 65,
+        baseThickness: 2.8, brushType: 'bucket', splashEnabled: false, splashIntensity: 0, opacity: 0.8, viscosity: 0.45, bucketCapacity: 45,
       },
       dropPosition: { x: 0.82, y: 0 },
       backgroundColor: '#ffffff',
@@ -86,7 +95,7 @@ export const presets: PresetConfig[] = [
     description: 'Tett, vevd stjernemønster som fyller lerretet',
     emoji: '🌀',
     settings: {
-      pendulum: { stringLength: 0.6, frequencyRatio: 1.0907, damping: 0.0011 },
+      pendulum: { stringLength: 0.6, frequencyRatio: 1.0907, damping: 0.0025 },
       paint: {
         holes: [
           { offsetX: 0, offsetY: 0, color: '#9b2226', thickness: 1.0 },
@@ -94,7 +103,7 @@ export const presets: PresetConfig[] = [
           { offsetX: -0.02, offsetY: 0.035, color: '#bb3e03', thickness: 1.1 },
           { offsetX: -0.02, offsetY: -0.035, color: '#0a9396', thickness: 0.8 },
         ],
-        baseThickness: 2.6, brushType: 'bucket', splashEnabled: true, splashIntensity: 0.45, opacity: 0.55, viscosity: 0.3, bucketCapacity: 90,
+        baseThickness: 4.5, brushType: 'marker', splashEnabled: true, splashIntensity: 0.45, opacity: 0.8, viscosity: 0.3, bucketCapacity: 90,
       },
       dropPosition: { x: 0.9, y: -0.2 },
       throwMode: 'throw-ccw',
@@ -110,7 +119,7 @@ export const presets: PresetConfig[] = [
       pendulum: { stringLength: 1.2, frequencyRatio: 1.0, damping: 0.0034 },
       paint: {
         holes: [{ offsetX: 0, offsetY: 0, color: '#2b2d42', thickness: 1 }],
-        baseThickness: 2.4, brushType: 'marker', splashEnabled: false, splashIntensity: 0, opacity: 0.9, viscosity: 0.8, bucketCapacity: 50,
+        baseThickness: 3.0, brushType: 'marker', splashEnabled: false, splashIntensity: 0, opacity: 0.95, viscosity: 0.8, bucketCapacity: 50,
       },
       dropPosition: { x: 0.78, y: 0 },
       throwMode: 'throw-ccw',
@@ -143,13 +152,13 @@ export const presets: PresetConfig[] = [
     description: 'Kronblad-rosett i varme blomsterfarger',
     emoji: '🌸',
     settings: {
-      pendulum: { stringLength: 0.85, frequencyRatio: 1.055, damping: 0.0024 },
+      pendulum: { stringLength: 0.85, frequencyRatio: 1.006, damping: 0.0032 },
       paint: {
         holes: [
           { offsetX: 0, offsetY: 0, color: '#ff006e', thickness: 1.0 },
           { offsetX: 0.02, offsetY: 0, color: '#8338ec', thickness: 0.8 },
         ],
-        baseThickness: 3, brushType: 'squeeze', splashEnabled: false, splashIntensity: 0, opacity: 0.85, viscosity: 0.55, bucketCapacity: 60,
+        baseThickness: 3, brushType: 'squeeze', splashEnabled: false, splashIntensity: 0, opacity: 0.85, viscosity: 0.55, bucketCapacity: 45,
       },
       dropPosition: { x: 0.82, y: 0.03 },
       backgroundColor: '#fff8f0',
@@ -171,11 +180,11 @@ export const presets: PresetConfig[] = [
           { offsetX: -0.025, offsetY: 0.025, color: '#4400cc', thickness: 0.8 },
           { offsetX: -0.035, offsetY: 0, color: '#8800cc', thickness: 0.9 },
         ],
-        baseThickness: 2.5, brushType: 'flat-brush', splashEnabled: true, splashIntensity: 0.5, opacity: 0.75, viscosity: 0.35, bucketCapacity: 90,
+        baseThickness: 5.5, brushType: 'squeeze', splashEnabled: true, splashIntensity: 0.5, opacity: 0.85, viscosity: 0.35, bucketCapacity: 90,
       },
-      dropPosition: { x: 0.85, y: 0.15 },
+      dropPosition: { x: 0.75, y: 0.12 },
       throwMode: 'throw-ccw',
-      throwSpeed: 1.15,
+      throwSpeed: 0.9,
       backgroundColor: '#fafafa',
     },
   },
@@ -218,10 +227,15 @@ export function randomSettings(): SimulationSettings {
 
   return {
     ...base,
+    seed: newSeed(),
+    // Occasionally showcase the realism extras (texture always subtle;
+    // wet-on-wet only on light grounds where multiply blending reads correctly).
+    paperTexture: Math.random() < 0.35 ? rnd(0.3, 0.7) : 0,
     pendulum: {
       stringLength: rnd(0.6, 1.8),
-      // Keep close to 1.0 — the physically realistic, canvas-filling rosette range.
-      frequencyRatio: Math.random() < 0.8 ? rnd(1.005, 1.09) : pick([1.5, 5 / 3, 2.0]),
+      // Keep close to 1.0 — Airy precession draws the rosette; large detuning
+      // shears the pattern into moiré bands. Occasional Lissajous ratios for variety.
+      frequencyRatio: Math.random() < 0.85 ? rnd(1.0, 1.025) : pick([1.5, 5 / 3, 2.0]),
       damping: rnd(0.0012, 0.0038),
     },
     paint: {
@@ -233,6 +247,7 @@ export function randomSettings(): SimulationSettings {
       opacity: rnd(0.65, 0.9),
       viscosity: rnd(0.25, 0.7),
       bucketCapacity: Math.round(rnd(55, 95)),
+      wetBlend: !dark && Math.random() < 0.3,
     },
     symmetry: rotational
       ? { mode: 'rotational', rotationalOrder: 2 + Math.floor(Math.random() * 5) }

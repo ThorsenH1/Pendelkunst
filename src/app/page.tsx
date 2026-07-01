@@ -5,8 +5,9 @@ import PaintCanvas from '@/components/PaintCanvas';
 import ControlPanel from '@/components/ControlPanel';
 import ExportDialog from '@/components/ExportDialog';
 import GalleryPanel from '@/components/GalleryPanel';
+import HelpDialog from '@/components/HelpDialog';
 import { SimulationSettings, SimulationState, PaintPoint } from '@/lib/types';
-import { createDefaultSettings, randomSettings } from '@/lib/presets';
+import { createDefaultSettings, randomSettings, newSeed } from '@/lib/presets';
 import { savePainting } from '@/lib/gallery';
 
 // Error boundary — a runtime error should never leave a blank white screen.
@@ -46,6 +47,7 @@ function HomeInner() {
   const [simState, setSimState] = useState<SimulationState>('idle');
   const [showExport, setShowExport] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [saveMsg, setSaveMsg] = useState('');
   const [loadImage, setLoadImage] = useState<Blob | null>(null);
@@ -57,6 +59,11 @@ function HomeInner() {
   const handleSimState = useCallback((s: SimulationState) => setSimState(s), []);
   const handleSettings = useCallback((s: SimulationSettings) => setSettings(s), []);
   const handleImageLoaded = useCallback(() => setLoadImage(null), []);
+
+  // Roll a fresh seed after mount (not in the initializer — SSR/hydration must match).
+  useEffect(() => {
+    setSettings((s) => ({ ...s, seed: newSeed() }));
+  }, []);
 
   const handleSave = useCallback(async () => {
     const canvas = offscreenRef.current;
@@ -123,7 +130,8 @@ function HomeInner() {
     setCanUndo(false);
     setLoadImage(image);
     pointsRef.current = points;
-    setSettings(savedSettings);
+    // Older saved paintings predate newer settings fields — fill them from defaults.
+    setSettings({ ...createDefaultSettings(), ...savedSettings, paint: { wetBlend: false, ...savedSettings.paint } });
     setSimState('done');
     setShowGallery(false);
   }, []);
@@ -133,7 +141,7 @@ function HomeInner() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-      if (showExport || showGallery) return;
+      if (showExport || showGallery || showHelp) return;
 
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         if (canUndo) { e.preventDefault(); handleUndo(); }
@@ -157,11 +165,12 @@ function HomeInner() {
           if (simState === 'idle' || simState === 'done') handleRandomize();
           break;
         case 'n': case 'N': handleNewPainting(); break;
+        case '?': setShowHelp(true); break;
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [simState, showExport, showGallery, canUndo, handleStartLayer, handleSave, handleRandomize, handleNewPainting, handleUndo]);
+  }, [simState, showExport, showGallery, showHelp, canUndo, handleStartLayer, handleSave, handleRandomize, handleNewPainting, handleUndo]);
 
   return (
     <main className="flex flex-col lg:flex-row h-[100dvh] bg-gray-950 overflow-hidden">
@@ -220,6 +229,7 @@ function HomeInner() {
           onRandomize={handleRandomize}
           onNewPainting={handleNewPainting}
           onUndo={handleUndo}
+          onShowHelp={() => setShowHelp(true)}
           canUndo={canUndo}
           saveMsg={saveMsg}
         />
@@ -233,6 +243,9 @@ function HomeInner() {
 
       {/* Gallery */}
       {showGallery && <GalleryPanel onClose={() => setShowGallery(false)} onLoad={handleLoadFromGallery} />}
+
+      {/* How-to guide */}
+      {showHelp && <HelpDialog onClose={() => setShowHelp(false)} />}
     </main>
   );
 }

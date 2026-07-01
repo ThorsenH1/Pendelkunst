@@ -1,7 +1,7 @@
 'use client';
 
 import { SimulationSettings, SimulationState, HoleConfig, CanvasMotionMode, ThrowMode, BrushType } from '@/lib/types';
-import { presets, createDefaultSettings } from '@/lib/presets';
+import { presets, createDefaultSettings, newSeed } from '@/lib/presets';
 
 interface Props {
   settings: SimulationSettings;
@@ -15,6 +15,7 @@ interface Props {
   onRandomize: () => void;
   onNewPainting: () => void;
   onUndo: () => void;
+  onShowHelp: () => void;
   canUndo: boolean;
   saveMsg?: string;
 }
@@ -28,19 +29,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Slider({ label, value, min, max, step, onChange, formatValue }: {
+function Slider({ label, value, min, max, step, onChange, formatValue, disabled }: {
   label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; formatValue?: (v: number) => string;
+  onChange: (v: number) => void; formatValue?: (v: number) => string; disabled?: boolean;
 }) {
   return (
-    <label className="block mb-3">
+    <label className={`block mb-3 ${disabled ? 'opacity-50' : ''}`}>
       <div className="flex justify-between text-sm mb-1">
         <span className="text-gray-300">{label}</span>
         <span className="text-gray-500 font-mono text-xs">
           {formatValue ? formatValue(value) : value.toFixed(step < 1 ? (step < 0.01 ? 4 : 2) : 0)}
         </span>
       </div>
-      <input type="range" className="w-full" value={value} min={min} max={max} step={step}
+      <input type="range" className="w-full" value={value} min={min} max={max} step={step} disabled={disabled}
         onChange={(e) => onChange(parseFloat(e.target.value))} />
     </label>
   );
@@ -48,7 +49,7 @@ function Slider({ label, value, min, max, step, onChange, formatValue }: {
 
 export default function ControlPanel({
   settings, onSettingsChange, simState, onSimStateChange,
-  onStartLayer, onExport, onSave, onShowGallery, onRandomize, onNewPainting, onUndo, canUndo, saveMsg,
+  onStartLayer, onExport, onSave, onShowGallery, onRandomize, onNewPainting, onUndo, onShowHelp, canUndo, saveMsg,
 }: Props) {
   const canEdit = simState === 'idle' || simState === 'done';
 
@@ -113,12 +114,21 @@ export default function ControlPanel({
         <h1 className="text-lg font-bold text-white flex items-center gap-2">
           <span className="text-2xl" aria-hidden>🎨</span> Pendelkunst
         </h1>
-        <button
-          onClick={onShowGallery}
-          className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium transition-colors"
-        >
-          🖼️ Galleri
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onShowHelp}
+            className="px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium transition-colors"
+            aria-label="Slik gjør du det hjemme"
+          >
+            ❓
+          </button>
+          <button
+            onClick={onShowGallery}
+            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium transition-colors"
+          >
+            🖼️ Galleri
+          </button>
+        </div>
       </div>
       <p className="text-gray-500 text-xs mb-4">Lag ditt eget pendelmaleri med ekte fysikk</p>
 
@@ -203,14 +213,14 @@ export default function ControlPanel({
           value={settings.pendulum.frequencyRatio}
           min={0.5} max={2.0} step={0.001}
           formatValue={(v) => {
-            if (Math.abs(v - 1.0) < 0.005) return '1.000 (sirkel)';
+            if (Math.abs(v - 1.0) < 0.005) return '1.000 (rosett)';
             if (Math.abs(v - 1.5) < 0.01) return '3:2 (Lissajous)';
             if (Math.abs(v - 5/3) < 0.01) return '5:3 (blomst)';
             if (Math.abs(v - 2.0) < 0.01) return '2:1 (figur-8)';
             return v.toFixed(3);
           }}
           onChange={(v) => updatePendulum('frequencyRatio', v)} />
-        <p className="text-[10px] text-gray-500 -mt-2 mb-3">1.0 = symmetrisk sirkel. ≈1.02–1.06 = rosett. 3:2 / 5:3 = geometriske figurer.</p>
+        <p className="text-[10px] text-gray-500 -mt-2 mb-3">Nær 1.0 = rund, presesserende rosett (mest realistisk). Høyere = vevd moiré. 3:2 / 5:3 = Lissajous.</p>
         <Slider label="Demping (friksjon)"
           value={settings.pendulum.damping}
           min={0.0005} max={0.02} step={0.0005}
@@ -350,6 +360,61 @@ export default function ControlPanel({
           onChange={(v) => update({ paint: { ...settings.paint, bucketCapacity: v } })} />
       </Section>
 
+      {/* Realism */}
+      <Section title="Realisme">
+        <Slider label="Lerretstekstur" value={settings.paperTexture ?? 0} min={0} max={1} step={0.05}
+          disabled={simState !== 'idle'}
+          formatValue={(v) => v === 0 ? 'Av' : `${Math.round(v * 100)}%`}
+          onChange={(v) => update({ paperTexture: v })} />
+        <p className="text-[10px] text-gray-500 -mt-2 mb-3">Subtil korn og vev i underlaget — følger med i eksporten. Velges før du maler.</p>
+
+        <label className="flex items-center gap-2 text-gray-300 mb-1 cursor-pointer">
+          <input type="checkbox" checked={settings.paint.wetBlend === true}
+            disabled={!canEdit}
+            onChange={(e) => update({ paint: { ...settings.paint, wetBlend: e.target.checked } })}
+            className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500" />
+          <span className="text-sm">Våt-i-våt fargeblanding</span>
+        </label>
+        <p className="text-[10px] text-gray-500 mb-3 ml-6">Overlappende strøk blandes som ekte pigment. Best på lys bakgrunn.</p>
+
+        <label className="flex items-center gap-2 text-gray-300 mb-1 cursor-pointer">
+          <input type="checkbox" checked={settings.showRig !== false}
+            onChange={(e) => update({ showRig: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500" />
+          <span className="text-sm">Vis pendel og snor</span>
+        </label>
+        <p className="text-[10px] text-gray-500 mb-1 ml-6">Tegner den svingende malingsbeholderen over lerretet mens den maler.</p>
+      </Section>
+
+      {/* Reproducibility */}
+      <Section title="Frø (reproduserbart)">
+        <p className="text-[10px] text-gray-500 mb-2">Samme frø + samme innstillinger gir nøyaktig samme maleri. Del frøet, del kunsten!</p>
+        <div className="flex gap-2 items-center">
+          <input
+            type="number"
+            min={1}
+            max={999999}
+            value={settings.seed ?? 1}
+            disabled={!canEdit}
+            onChange={(e) => {
+              const v = Math.max(1, Math.min(999999, Math.round(parseFloat(e.target.value) || 1)));
+              update({ seed: v });
+            }}
+            className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-gray-800 text-gray-200 font-mono text-sm border border-gray-700 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            aria-label="Frø for reproduserbart maleri"
+          />
+          <button
+            onClick={() => update({ seed: newSeed() })}
+            disabled={!canEdit}
+            className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Nytt tilfeldig frø"
+            title="Nytt tilfeldig frø"
+          >
+            🎲
+          </button>
+        </div>
+      </Section>
+
       {/* Symmetry */}
       <Section title="Symmetri">
         <div className="grid grid-cols-2 gap-2 mb-3" role="group" aria-label="Symmetri">
@@ -439,7 +504,7 @@ export default function ControlPanel({
       </div>
 
       <p className="text-[10px] text-gray-600 pb-4 leading-relaxed">
-        Snarveier: <kbd className="text-gray-400">Mellomrom</kbd> start/pause · <kbd className="text-gray-400">R</kbd> overrask · <kbd className="text-gray-400">N</kbd> nytt · <kbd className="text-gray-400">E</kbd> eksport · <kbd className="text-gray-400">Ctrl+Z</kbd> angre
+        Snarveier: <kbd className="text-gray-400">Mellomrom</kbd> start/pause · <kbd className="text-gray-400">R</kbd> overrask · <kbd className="text-gray-400">N</kbd> nytt · <kbd className="text-gray-400">E</kbd> eksport · <kbd className="text-gray-400">Ctrl+Z</kbd> angre · <kbd className="text-gray-400">?</kbd> hjelp
       </p>
     </div>
   );
