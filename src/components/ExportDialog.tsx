@@ -19,7 +19,7 @@ const SIZES = [
 ];
 
 export default function ExportDialog({ pointsRef, settings, onClose }: Props) {
-  const [size, setSize] = useState(2048);
+  const [size, setSize] = useState(4096);
   const [fmt, setFmt] = useState<'png' | 'jpeg'>('png');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');

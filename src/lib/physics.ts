@@ -62,10 +62,12 @@ function pendulumToHarmonograph(
     vx0 = vMag * Math.cos(tangentAngle);
     vy0 = vMag * Math.sin(tangentAngle);
   } else {
-    // 'drop': a gentle, fixed perpendicular nudge (CCW) opens the line into a
-    // graceful precessing ellipse instead of a degenerate straight stroke.
+    // 'drop': a TRUE hand release. Nearly radial — only the tiny, unavoidable
+    // sideways tremor of a real hand (≈15% of circular speed). The swing traces a
+    // narrow ellipse that Airy-precesses into a slowly rotating fan — exactly what
+    // a real dropped paint bucket paints. (Was 0.7, which behaved like a throw.)
     const tangentAngle = angle - Math.PI / 2;
-    const vMag = omega0 * dist * 0.7;
+    const vMag = omega0 * dist * 0.15;
     vx0 = vMag * Math.cos(tangentAngle);
     vy0 = vMag * Math.sin(tangentAngle);
   }

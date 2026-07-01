@@ -7,15 +7,20 @@ import {
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
 } from '@/lib/physics';
-import { drawThickStroke, drawSplashDot, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng } from '@/lib/painter';
+import { drawThickStroke, drawSplashDot, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
-const PAINT_SIZE = 2048;
+const PAINT_SIZE = 3072;
 const STEPS_PER_FRAME = 14;
 const DT = 0.012;
 /** Physics->canvas scale: pos [-1,1] maps to canvas [0.05, 0.95]. */
 const SCALE = 0.45;
-/** Safety cap: stop a single run before memory/perf degrade (very long pieces). */
-const MAX_POINTS = 350_000;
+/** Safety cap: stop a single run before memory/perf degrade (very long pieces).
+ *  Splash droplets now store ONE trail point each (not one per step), so full
+ *  runs of every preset complete comfortably under this. */
+const MAX_POINTS = 1_000_000;
+/** Merge stroke segments shorter than this (normalized units ≈ 0.4px live):
+ *  the dying pendulum otherwise emits millions of invisible micro-segments. */
+const MIN_SEGMENT = 0.4 / PAINT_SIZE;
 
 interface Props {
   settings: SimulationSettings;
@@ -340,33 +345,40 @@ export default function PaintCanvas({
           const normX = hx + jx;
           const normY = hy + jy;
 
-          const strokeSeed = nextSeed();
-
-          const prev = prevHolePx.current.get(h);
           const prevNorm = prevHoleNorm.current.get(h);
-          if (prev) {
-            const d = Math.sqrt((px - prev.x) ** 2 + (py - prev.y) ** 2);
-            if (d < PAINT_SIZE * 0.15 && d > 0.3) {
-              const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
-              const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
-              for (let i = 0; i < ts.length; i++) {
-                drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i));
+          const segLen = prevNorm
+            ? Math.sqrt((normX - prevNorm.x) ** 2 + (normY - prevNorm.y) ** 2)
+            : Infinity;
+
+          // Merge micro-segments: the dying pendulum moves less than a pixel per
+          // step — carry until the segment is long enough to actually draw.
+          if (segLen >= MIN_SEGMENT) {
+            const strokeSeed = nextSeed();
+            const prev = prevHolePx.current.get(h);
+            if (prev) {
+              const d = Math.sqrt((px - prev.x) ** 2 + (py - prev.y) ** 2);
+              if (d < PAINT_SIZE * 0.15 && d > 0.3) {
+                const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
+                const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
+                for (let i = 0; i < ts.length; i++) {
+                  drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i));
+                }
               }
             }
-          }
-          prevHolePx.current.set(h, { x: px, y: py });
+            prevHolePx.current.set(h, { x: px, y: py });
 
-          pointsRef.current.push({
-            x: normX, y: normY,
-            fromX: prevNorm?.x, fromY: prevNorm?.y,
-            radius: jr, color: hole.color, opacity,
-            viscosity: ps.viscosity,
-            brushType: ps.brushType,
-            speed,
-            seed: strokeSeed,
-            blend: wet || undefined,
-          });
-          prevHoleNorm.current.set(h, { x: normX, y: normY });
+            pointsRef.current.push({
+              x: normX, y: normY,
+              fromX: prevNorm?.x, fromY: prevNorm?.y,
+              radius: jr, color: hole.color, opacity,
+              viscosity: ps.viscosity,
+              brushType: ps.brushType,
+              speed,
+              seed: strokeSeed,
+              blend: wet || undefined,
+            });
+            prevHoleNorm.current.set(h, { x: normX, y: normY });
+          }
           totalFlow.current += normFlow * DT * 0.01;
 
           if (ps.splashEnabled && prevPos.current) {
@@ -378,11 +390,26 @@ export default function PaintCanvas({
                 const pv = 0.0003 + rng() * sp.maxSpeed * 0.01;
                 const sizePow = Math.pow(rng(), 2.5);
                 const splashR = jr * (0.03 + sizePow * 0.35);
-                particles.current.push({
+                const particle = {
                   x: hx, y: hy, vx: Math.cos(angle) * pv, vy: Math.sin(angle) * pv,
                   radius: splashR, color: hole.color, life: 1,
                   decay: 0.015 + rng() * 0.05 + ps.viscosity * 0.03,
                   seed: nextSeed(),
+                };
+                particles.current.push(particle);
+                // ONE stored point per droplet: the export replays the whole
+                // deterministic flight from this initial state (see drawSplashTrail).
+                pointsRef.current.push({
+                  x: particle.x, y: particle.y,
+                  radius: particle.radius,
+                  color: particle.color,
+                  opacity: 0.5,
+                  vx: particle.vx, vy: particle.vy,
+                  viscosity: ps.viscosity,
+                  isSplash: true,
+                  decay: particle.decay,
+                  seed: particle.seed,
+                  blend: wet || undefined,
                 });
               }
             }
@@ -392,11 +419,14 @@ export default function PaintCanvas({
         prevPos.current = { x: cx, y: cy };
         prevVel.current = { vx: vel.vx, vy: vel.vy };
 
+        // Advance droplets with EXACTLY the same integration the export replays
+        // (SPLASH_GRAVITY / splashDrag are shared with painter.drawSplashTrail).
+        const drag = splashDrag(ps.viscosity);
         particles.current = particles.current.filter(p => {
           p.x += p.vx; p.y += p.vy;
-          p.vy += 0.00003;
-          p.vx *= 0.96 + ps.viscosity * 0.03;
-          p.vy *= 0.96 + ps.viscosity * 0.03;
+          p.vy += SPLASH_GRAVITY;
+          p.vx *= drag;
+          p.vy *= drag;
           p.life -= p.decay;
           if (p.life > 0) {
             const ppx = p.x * PAINT_SIZE, ppy = p.y * PAINT_SIZE, ppr = p.radius * PAINT_SIZE * p.life;
@@ -405,17 +435,6 @@ export default function PaintCanvas({
             for (let i = 0; i < copies.length; i++) {
               drawSplashDot(paintCtx, copies[i].x, copies[i].y, ppr, p.color, p.life * 0.5, pvx, pvy, ps.viscosity, copySeed(p.seed, i));
             }
-            pointsRef.current.push({
-              x: p.x, y: p.y,
-              radius: p.radius * p.life,
-              color: p.color,
-              opacity: p.life * 0.5,
-              vx: p.vx, vy: p.vy,
-              viscosity: ps.viscosity,
-              isSplash: true,
-              seed: p.seed,
-              blend: wet || undefined,
-            });
             return true;
           }
           return false;

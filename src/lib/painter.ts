@@ -146,8 +146,8 @@ function strokeBucket(
   const wobble = 1 + (rng() - 0.5) * 0.25 * (1 - viscosity);
   const r = radius * speedVar * wobble;
 
-  ctx.globalAlpha = Math.min(opacity * (0.85 + rng() * 0.15), 1);
-  ctx.strokeStyle = varyColor(color, 0.02, rng);
+  ctx.globalAlpha = Math.min(opacity * (0.9 + rng() * 0.1), 1);
+  ctx.strokeStyle = varyColor(color, 0.015, rng);
   ctx.lineWidth = r * 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -167,19 +167,36 @@ function strokeBucket(
       const blobR = r * (0.15 + rng() * 0.35);
       const bx = mx + Math.cos(angle) * side * (r + blobR * 0.3);
       const by = my + Math.sin(angle) * side * (r + blobR * 0.3);
-      ctx.globalAlpha = opacity * (0.3 + rng() * 0.3);
-      ctx.fillStyle = varyColor(color, 0.03, rng);
+      ctx.globalAlpha = opacity * (0.25 + rng() * 0.25);
+      ctx.fillStyle = varyColor(color, 0.025, rng);
       ctx.beginPath();
       ctx.arc(bx, by, blobR, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
+  // Wet-edge ("coffee ring"): real paint dries darker along the stroke edges.
   if (r > 1.5) {
-    ctx.globalAlpha = opacity * (0.08 + viscosity * 0.06);
-    ctx.strokeStyle = darken(color, 0.3);
-    ctx.lineWidth = r * 2 + r * 0.2;
+    const angle = Math.atan2(y2 - y1, x2 - x1) + Math.PI / 2;
+    const ex = Math.cos(angle) * r * 0.85;
+    const ey = Math.sin(angle) * r * 0.85;
+    ctx.globalAlpha = opacity * (0.1 + viscosity * 0.08);
+    ctx.strokeStyle = darken(color, 0.28);
+    ctx.lineWidth = r * 0.3;
     ctx.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x1 + ex * s, y1 + ey * s);
+      ctx.lineTo(x2 + ex * s, y2 + ey * s);
+      ctx.stroke();
+    }
+  }
+
+  // Wet sheen: a faint light streak along the middle of slow, fat strokes.
+  if (r > 3 && speed < 0.8) {
+    ctx.globalAlpha = opacity * 0.07 * (1 - viscosity * 0.4);
+    ctx.strokeStyle = lighten(color, 0.55);
+    ctx.lineWidth = r * 0.45;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
@@ -554,6 +571,46 @@ export function drawSplashDot(
   ctx.restore();
 }
 
+// ═══════════════════════════════════════════════════════════
+// SPLASH TRAIL REPLAY
+// A droplet's flight is fully deterministic given its initial
+// state, so one stored PaintPoint replays the whole trail with
+// EXACTLY the same integration as the live loop in PaintCanvas:
+//   x += vx; y += vy; vy += GRAV; v *= drag; life -= decay
+// ═══════════════════════════════════════════════════════════
+
+export const SPLASH_GRAVITY = 0.00003;
+
+export function splashDrag(viscosity: number): number {
+  return 0.96 + viscosity * 0.03;
+}
+
+/** Replay one droplet's full trajectory, drawing every step with the SAME
+ *  per-step symmetry/seed logic as the live loop — pixel-identical to live. */
+export function drawSplashTrail(
+  ctx: CanvasRenderingContext2D,
+  p: { x: number; y: number; vx: number; vy: number; radius: number; color: string; decay: number; seed: number },
+  viscosity: number,
+  canvasSize: number,
+  symmetry: SymmetrySettings,
+) {
+  let x = p.x, y = p.y, vx = p.vx, vy = p.vy, life = 1;
+  const drag = splashDrag(viscosity);
+  while (true) {
+    x += vx; y += vy;
+    vy += SPLASH_GRAVITY;
+    vx *= drag; vy *= drag;
+    life -= p.decay;
+    if (life <= 0) break;
+    const ppx = x * canvasSize, ppy = y * canvasSize, ppr = p.radius * life * canvasSize;
+    const pvx = vx * canvasSize, pvy = vy * canvasSize;
+    const copies = getSymmetryTransforms(ppx, ppy, canvasSize, symmetry);
+    for (let i = 0; i < copies.length; i++) {
+      drawSplashDot(ctx, copies[i].x, copies[i].y, ppr, p.color, life * 0.5, pvx, pvy, viscosity, copySeed(p.seed, i));
+    }
+  }
+}
+
 // ── Paint accumulation blob (used for layer-start dots / loaded points) ──
 
 export function drawPaintBlob(
@@ -627,6 +684,17 @@ function renderOnePoint(
   ctx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
 
   if (p.isSplash) {
+    if (p.decay != null) {
+      // Trail point: replay the droplet's whole deterministic flight.
+      drawSplashTrail(
+        ctx,
+        { x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0, radius: p.radius, color: p.color, decay: p.decay, seed: baseSeed },
+        visc, canvasSize, symmetry,
+      );
+      ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
+    // Legacy single-dot splash point (older gallery paintings).
     if (r < 0.15) { ctx.globalCompositeOperation = 'source-over'; return; }
     const vx = (p.vx ?? 0) * canvasSize;
     const vy = (p.vy ?? 0) * canvasSize;

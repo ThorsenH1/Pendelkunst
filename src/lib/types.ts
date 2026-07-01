@@ -110,6 +110,10 @@ export interface PaintPoint {
   isSplash?: boolean;
   /** Wet-on-wet: render this point with multiply compositing (real pigment mixing). */
   blend?: boolean;
+  /** Splash-trail points: life decay per step. When set, (x, y, vx, vy, radius, decay)
+   *  are the droplet's INITIAL state and the renderer replays the whole deterministic
+   *  trajectory — one stored point per droplet instead of one per animation step. */
+  decay?: number;
 }
 
 export interface SplashParticle {

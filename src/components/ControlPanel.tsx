@@ -156,7 +156,7 @@ export default function ControlPanel({
 
       {/* Drop / Throw mode */}
       <Section title="Slipp / Kast pendelen">
-        <p className="text-[10px] text-gray-500 mb-2">Velg om pendelen slippes mykt eller kastes i en sirkelbevegelse (som i de virale videoene).</p>
+        <p className="text-[10px] text-gray-500 mb-2">Slipp = ekte rett slipp (smal vifte som sakte roterer). Kast = sirkelbevegelse som fyller lerretet med rosetter (som i de virale videoene).</p>
         <div className="grid grid-cols-3 gap-1.5 mb-3" role="group" aria-label="Slipp eller kast">
           {([
             ['drop', 'Slipp', '📍'],
@@ -388,7 +388,7 @@ export default function ControlPanel({
 
       {/* Reproducibility */}
       <Section title="Frø (reproduserbart)">
-        <p className="text-[10px] text-gray-500 mb-2">Samme frø + samme innstillinger gir nøyaktig samme maleri. Del frøet, del kunsten!</p>
+        <p className="text-[10px] text-gray-500 mb-2">Appen er 100 % deterministisk: samme innstillinger + samme frø gir nøyaktig samme maleri, hver eneste gang. Frøet styrer bare de bittesmå naturlige tilfeldighetene (skjelv og sprut) — bytt frø for en ny variant av samme oppsett.</p>
         <div className="flex gap-2 items-center">
           <input
             type="number"

@@ -34,9 +34,9 @@ with. To **fill a disc like real pendulum art you need a roughly ROUND orbit (Rx
 requires the initial perpendicular velocity to be on the order of `ω·r` (a factor ~1.0, NOT 0.4).
 
 - `throw`: `vMag = throwSpeed · ω0 · dist` → `throwSpeed = 1` ≈ circular orbit. 0.3 = thin, 2 = tall.
-- `drop`: gentle fixed perpendicular nudge (`ω0 · dist · 0.7`, CCW). A real hand-release is never
-  perfectly radial, so the swing opens into a precessing ellipse = the classic rosette. **Never let
-  `drop` produce a pure straight line** — that's the degenerate, ugly case.
+- `drop` (2026-07): a TRUE hand release — tiny 0.15 perpendicular tremor only. It paints a narrow
+  Airy-precessing fan (honest physics; users noticed the old 0.7 nudge "behaved like a throw").
+  The classic full rosettes come from `throw-ccw` at `throwSpeed ≈ 0.7` — presets use that.
 - **Airy precession is what makes it ROUND (2026-07 upgrade — the second most important insight):**
   a plain detuned oscillator (`ratio 1.02`) does NOT rotate the ellipse — it drifts the relative
   phase, which alternates ellipse ↔ diagonal line and fills a SQUARE envelope (the boxy/bowtie
@@ -62,8 +62,13 @@ Export must be **pixel-identical (scaled) to the live canvas**. This is achieved
   baked into the stored point's coordinates/radius; texture randomness is seeded.)
 - Each `PaintPoint` carries a `seed`. Live and export both derive per-symmetry-copy seeds with
   `copySeed(seed, i)`. Same seed in → same pixels out.
-- Splash points store `vx, vy, isSplash`; export renders them with the SAME `drawSplashDot`, not a
-  different blob. Stroke points store `fromX/fromY, brushType, viscosity, speed`.
+- Splash droplets store ONE trail point each (2026-07): `x, y, vx, vy, radius, decay, isSplash` are
+  the INITIAL state; `drawSplashTrail` replays the whole deterministic flight with the exact same
+  integration/constants as the live loop (`SPLASH_GRAVITY`, `splashDrag` — shared exports; never
+  fork these). Legacy per-step splash points (`decay == null`) still render as single dots.
+- Stroke points store `fromX/fromY, brushType, viscosity, speed`; segments shorter than
+  `MIN_SEGMENT` (0.4px) are merged in `PaintCanvas` — the dying pendulum otherwise emits millions
+  of invisible micro-segments (this was why runs hit MAX_POINTS early and "ended too soon").
 - `renderPointsHighResAsync` is chunked + yields to keep the UI responsive with a progress bar.
 
 If you add a brush or effect: thread `seed` through it, keep it deterministic, and store whatever
@@ -98,7 +103,9 @@ canvas+points (new layer). `running ↔ paused` must **continue** (never reset `
 - TypeScript strict; no `any` creep. Keep the `PaintPoint` shape backward-compatible (gallery stores it).
 - All UI copy in **Norwegian (Bokmål)**.
 - No `localStorage`/`sessionStorage` reliance for art data — gallery uses IndexedDB.
-- Keep the hot loop allocation-light; guard runaway runs with `MAX_POINTS` (~350k) in `PaintCanvas`.
+- Keep the hot loop allocation-light; guard runaway runs with `MAX_POINTS` (1M) in `PaintCanvas`.
+  With trail-point splash + segment merging, every preset's FULL run fits under it (max ≈ 830k).
+- Live paint canvas is `PAINT_SIZE = 3072` (raised from 2048 for save/export quality).
 - Accessibility: `aria-pressed` on toggles, `aria-label`s, visible `:focus-visible`, honor reduced motion.
 - Determinism in `painter.ts` is sacred (see §3).
 

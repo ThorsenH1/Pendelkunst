@@ -28,7 +28,7 @@ const STEPS: Array<{ emoji: string; title: string; text: string }> = [
   {
     emoji: '🤲',
     title: '5. Slipp eller kast',
-    text: 'Hold fingeren over hullet, trekk koppen ut til siden og slipp — eller gi den et lite dytt sidelengs for en sirkelbane («Kast» i appen). Jo lenger ut du starter, jo mer energi og større mønster.',
+    text: 'Hold fingeren over hullet, trekk koppen ut til siden og slipp rett — da tegnes en smal vifte som sakte roterer («Slipp» i appen). Gi den et lite dytt sidelengs, så åpner banen seg til de klassiske runde rosettene («Kast»). Jo lenger ut du starter, jo mer energi og større mønster.',
   },
   {
     emoji: '⏳',
