@@ -146,10 +146,17 @@ export default function ControlPanel({
         <div className="grid grid-cols-2 gap-2">
           {presets.map((p, i) => (
             <button key={p.name} onClick={() => applyPreset(i)} disabled={!canEdit}
-              className="text-left px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-              <span className="text-base mr-1" aria-hidden>{p.emoji}</span>
-              <span className="text-gray-200 text-xs font-medium">{p.name}</span>
-              <p className="text-[10px] text-gray-500 mt-0.5">{p.description}</p>
+              className="text-left rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors overflow-hidden group">
+              {p.thumbnail && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.thumbnail} alt="" aria-hidden width={240} height={240}
+                  className="w-full aspect-square object-cover group-hover:scale-105 transition-transform" />
+              )}
+              <div className="px-3 py-2">
+                <span className="text-base mr-1" aria-hidden>{p.emoji}</span>
+                <span className="text-gray-200 text-xs font-medium">{p.name}</span>
+                <p className="text-[10px] text-gray-500 mt-0.5">{p.description}</p>
+              </div>
             </button>
           ))}
         </div>

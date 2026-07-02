@@ -134,14 +134,17 @@ fragment; decode NEVER trusts the payload — every field is validated/clamped v
 Loaded on mount in `page.tsx`, then the fragment is stripped; "Del oppsettet" button copies it)
 · export micro-segment fix (scaled draw floor in `renderOnePoint`, see §3) · Web Share API on
 mobile ("Del oppsettet" opens the native share sheet via `navigator.share` when the UA is mobile;
-AbortError = user closed the sheet, silently ignored; desktop keeps clipboard copy + prompt fallback).
+AbortError = user closed the sheet, silently ignored; desktop keeps clipboard copy + prompt fallback)
+· preset thumbnails in the picker (`PresetConfig.thumbnail` → `public/presets/<slug>.webp`;
+deterministic mini-renders of each preset at seed 1 — headless sim at 480px via renderPointsHighRes,
+downscaled to 240px webp q82, ~8–23 KB each. **Regenerate them with the headless QA pipeline
+whenever a preset or the physics/paint code changes**, otherwise the picker lies about the result.
+No `loading="lazy"` on these — 8 × ~15 KB doesn't need it and lazy left them unloaded in preview QA).
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
 2. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
-3. Preset `previewThumbnail`s in the picker (deterministic mini-renders; the headless QA pipeline
-   already produces exactly these — generate once, commit under `public/presets/`).
-4. Faint drop-shadow on dry paint (off-by-default).
+3. Faint drop-shadow on dry paint (off-by-default).
 
 ## 7. How to develop & VERIFY in this environment (important gotchas)
 
@@ -160,7 +163,11 @@ Remaining:
   # node script: simulate (mirror the PaintCanvas loop) → renderPointsHighRes → toBuffer('image/png')
   ```
   Render all 8 presets + Default in a montage and eyeball that they fill the canvas like real
-  pendulum art before shipping.
+  pendulum art before shipping. The same pipeline regenerates the preset picker thumbnails
+  (480px render → 240px webp q82 → `public/presets/<slug>.webp`) — do that in the same pass.
+- **Never edit UTF-8 source with Windows PowerShell 5.1 string ops** (`Get-Content -Raw` →
+  `-replace` → `Set-Content`): it decodes as ANSI and writes back mojibake (ø→Ã¸, —→â€”, broken
+  emoji) plus a BOM. Use the Edit/Write file tools for source edits; PowerShell only for commands.
 
 ## 8. Deploy / relaunch
 

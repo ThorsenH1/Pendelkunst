@@ -41,6 +41,7 @@ export function newSeed(): number {
 export const presets: PresetConfig[] = [
   {
     name: 'Rosett',
+    thumbnail: '/presets/rosett.webp',
     description: 'Klassisk pendelmønster som i virale videoer',
     emoji: '🌹',
     settings: {
@@ -61,6 +62,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Organisk',
+    thumbnail: '/presets/organisk.webp',
     description: 'Lang snor og jordfarger — rolig, naturlig rosett',
     emoji: '🌿',
     settings: {
@@ -81,6 +83,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Geometrisk',
+    thumbnail: '/presets/geometrisk.webp',
     description: 'Tette, presise linjer som tegner skarpe figurer',
     emoji: '📐',
     settings: {
@@ -100,6 +103,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Kaotisk',
+    thumbnail: '/presets/kaotisk.webp',
     description: 'Tett, vevd stjernemønster som fyller lerretet',
     emoji: '🌀',
     settings: {
@@ -121,6 +125,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Zen',
+    thumbnail: '/presets/zen.webp',
     description: 'Ren, rolig spiral — meditativt og enkelt',
     emoji: '🧘',
     settings: {
@@ -137,6 +142,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Galakse',
+    thumbnail: '/presets/galakse.webp',
     description: 'Lang, sakte spiral-ring med kosmiske farger',
     emoji: '🌌',
     settings: {
@@ -157,6 +163,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Blomst',
+    thumbnail: '/presets/blomst.webp',
     description: 'Kronblad-rosett i varme blomsterfarger',
     emoji: '🌸',
     settings: {
@@ -176,6 +183,7 @@ export const presets: PresetConfig[] = [
   },
   {
     name: 'Regnbue',
+    thumbnail: '/presets/regnbue.webp',
     description: 'Alle regnbuens farger i en sirkel-rosett',
     emoji: '🌈',
     settings: {

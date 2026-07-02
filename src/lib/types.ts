@@ -135,6 +135,9 @@ export interface PresetConfig {
   name: string;
   description: string;
   emoji: string;
+  /** Deterministic mini-render of this preset (seed 1), committed under public/presets/.
+   *  Regenerate with the headless QA pipeline whenever the preset or physics change. */
+  thumbnail?: string;
   settings: Partial<SimulationSettings>;
 }
 
