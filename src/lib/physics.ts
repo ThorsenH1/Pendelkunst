@@ -228,6 +228,46 @@ export function calcStreamBreakup(normFlow: number, viscosity: number): number {
   return Math.min(1, Math.pow(1 - normFlow / onset, 1.4));
 }
 
+// ── Liquid rope coiling ──
+// A viscous stream falling onto a surface that moves slower than the jet buckles
+// and coils like poured honey — the classic "liquid rope coiling" instability.
+// In pendulum painting this is what thick paint does when the bucket dawdles:
+// instead of laying a straight line it stacks tiny loops. We model the landing
+// point of the stream as a small circle traced around the point directly beneath
+// the hole. Deliberately rng-FREE (pure function of t), so the offset is baked
+// into the stored point coordinates and the WYSIWYG export replays it for free.
+/** Buckling frequency (rad/s). At DT = 0.012 one loop spans ~12 sim steps —
+ *  comfortably resolved, no aliasing. */
+const COIL_FREQ = 46;
+/** Thinner paint splashes/stretches rather than ropes — no coiling below this. */
+const COIL_ONSET_VISC = 0.45;
+/** Coiling only happens when the bucket moves slower than the falling jet
+ *  (physics units — the settling phase and the tips of narrow drop-fans). */
+const COIL_SPEED_MAX = 0.35;
+/** Max coil radius in stream radii — real coils are a couple of stream widths. */
+const COIL_RADIUS = 2.6;
+
+/** Landing offset of a coiling viscous stream (normalized canvas units).
+ *  Returns {0,0} for thin paint or a fast-moving bucket — most of the pattern
+ *  is untouched; coils appear only where real paint would coil. `phase` keeps
+ *  multiple holes from coiling in sync (pass e.g. holeIndex · golden angle). */
+export function calcRopeCoiling(
+  t: number,
+  speed: number,
+  viscosity: number,
+  streamRadius: number,
+  phase: number,
+): { dx: number; dy: number } {
+  const thick = (viscosity - COIL_ONSET_VISC) / (1 - COIL_ONSET_VISC);
+  if (thick <= 0) return { dx: 0, dy: 0 };
+  const slow = 1 - speed / COIL_SPEED_MAX;
+  if (slow <= 0) return { dx: 0, dy: 0 };
+  // slow² ramps the coil in gently as the bucket decelerates.
+  const r = streamRadius * COIL_RADIUS * Math.min(thick, 1) * slow * slow;
+  const a = COIL_FREQ * t + phase;
+  return { dx: r * Math.cos(a), dy: r * Math.sin(a) };
+}
+
 export function calcCentripetalAccel(vx: number, vy: number, prevVx: number, prevVy: number, dt: number): number {
   const ax = (vx - prevVx) / dt;
   const ay = (vy - prevVy) / dt;

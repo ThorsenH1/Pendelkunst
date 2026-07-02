@@ -6,7 +6,7 @@ import {
   calcPosition, calcVelocity, isSimulationDone, prepareHarmonograph,
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
-  calcStreamBreakup,
+  calcStreamBreakup, calcRopeCoiling,
 } from '@/lib/physics';
 import { drawThickStroke, drawSplashSplat, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
@@ -358,11 +358,15 @@ export default function PaintCanvas({
 
         for (let h = 0; h < ps.holes.length; h++) {
           const hole = ps.holes[h];
-          const hx = cx + hole.offsetX;
-          const hy = cy + hole.offsetY;
 
           const baseR = ps.baseThickness * hole.thickness * 0.002;
           const radius = calcDropRadius(ps.baseThickness, hole.thickness, speed, zHeight, normFlow, ps.viscosity);
+          // Viscous rope coiling: thick paint from a dawdling bucket lands in tiny
+          // loops, not a straight line. rng-FREE and baked into the stored point
+          // coordinates below, so the WYSIWYG export replays it exactly.
+          const coil = calcRopeCoiling(t, speed, ps.viscosity, radius, h * 2.618);
+          const hx = cx + hole.offsetX + coil.dx;
+          const hy = cy + hole.offsetY + coil.dy;
           const opacity = calcDropOpacity(ps.opacity, radius, baseR, normFlow);
 
           const turb = (1 - ps.viscosity) * 0.3;

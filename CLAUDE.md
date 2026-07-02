@@ -178,6 +178,19 @@ the edge, so splats dry with a faint darker outline — strongest for watery pai
 deliberately **rng-FREE and drawn before the satellites**, so every previously rendered pixel
 stays byte-identical; the 5 splash presets' picker thumbnails were regenerated (non-splash
 Geometrisk/Zen/Blomst verified byte-identical).
+· liquid rope coiling (2026-07): thick paint from a dawdling bucket buckles into tiny loops
+(honey-coiling instability) instead of laying a straight line. `calcRopeCoiling(t, speed,
+viscosity, streamRadius, phase)` in `physics.ts` returns a landing offset traced as a circle
+(`COIL_FREQ = 46` rad/s ≈ 12 steps/loop at DT, onset `viscosity > 0.45`, active below bucket
+speed 0.35, radius up to 2.6 stream radii, `slow²` ramp); PaintCanvas adds it to the hole
+position BEFORE jitter, per hole with golden-angle phase (`h·2.618`). Deliberately **rng-FREE**
+(pure function of t) and baked into stored point coordinates → the WYSIWYG export replays it for
+free and the rng call order is untouched. Effect: flat dense-center fields gain a subtle swirl
+texture (thick paint), drop-fan tips get faint apex wobbles. QA-verified: the 5 presets with
+viscosity ≤ 0.45 (Rosett/Geometrisk/Kaotisk/Galakse/Regnbue) render byte-identically to
+pre-feature; Default/Organisk/Zen/Blomst differ (point counts +2–6%, max still Kaotisk ≈778k);
+organisk/zen/blomst picker thumbnails regenerated. **The headless QA sim must apply the coil
+offset identically** (computed after `radius`, added to the hole position before jitter).
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
