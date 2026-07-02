@@ -281,7 +281,7 @@ export default function ControlPanel({
               ['bucket', '🪣', 'Bøtte', 'Tykt, blobaktig, renner'],
               ['fine-brush', '🖌️', 'Fin pensel', 'Tynn, elegant, trykkvar'],
               ['flat-brush', '🖼️', 'Flat pensel', 'Bred, synlige bust'],
-              ['marker', '🖊️', 'Tusj', 'Ren, jevn, gjennomsiktig'],
+              ['marker', '🖊️', 'Tusj', 'Ren, jevn, heldekkende'],
               ['drip-stick', '🥢', 'Dryppepinne', 'Ujevn, klatter og striper'],
               ['squeeze', '🧴', 'Klemflaske', 'Glatt, hevet, jevn'],
               ['spray', '🎨', 'Spray', 'Finfordelt, sprøytet'],
@@ -417,9 +417,9 @@ export default function ControlPanel({
         <button
           onClick={onShare}
           className="w-full mt-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
-          aria-label="Kopier delingslenke til dette oppsettet"
+          aria-label="Del eller kopier lenke til dette oppsettet"
         >
-          🔗 Del oppsettet (kopier lenke)
+          🔗 Del oppsettet
         </button>
         <p className="text-[10px] text-gray-500 mt-1.5">
           Lenken inneholder alle innstillinger og frøet — den som åpner den kan gjenskape

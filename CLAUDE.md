@@ -76,6 +76,10 @@ Export must be **pixel-identical (scaled) to the live canvas**. This is achieved
 - Stroke points store `fromX/fromY, brushType, viscosity, speed`; segments shorter than
   `MIN_SEGMENT` (0.4px) are merged in `PaintCanvas` — the dying pendulum otherwise emits millions
   of invisible micro-segments (this was why runs hit MAX_POINTS early and "ended too soon").
+- **Segment thresholds in `renderOnePoint` must SCALE with `canvasSize`** (2026-07 fix): the lower
+  draw floor is `d > canvasSize * 1e-4` (≈ the live 0.3px floor at 3072, scaled). A fixed pixel
+  floor (the old `d > 0.5`) silently dropped ~9% of stroke segments — the dense center — at
+  export sizes ≤ 3072. Do not reintroduce fixed-pixel thresholds in the export path.
 - `renderPointsHighResAsync` is chunked + yields to keep the UI responsive with a progress bar.
 
 If you add a brush or effect: thread `seed` through it, keep it deterministic, and store whatever
@@ -127,14 +131,17 @@ canvas) · seed surfaced in UI (`settings.seed`; run rng = `mulberry32(imul(seed
 · "Slik gjør du det hjemme" help dialog · shareable links (`share.ts`: `#del=<base64url(JSON)>`
 fragment; decode NEVER trusts the payload — every field is validated/clamped via
 `sanitizeSettings`, garbage → null; determinism verified: link round-trip → byte-identical PNG.
-Loaded on mount in `page.tsx`, then the fragment is stripped; "Del oppsettet" button copies it).
+Loaded on mount in `page.tsx`, then the fragment is stripped; "Del oppsettet" button copies it)
+· export micro-segment fix (scaled draw floor in `renderOnePoint`, see §3) · Web Share API on
+mobile ("Del oppsettet" opens the native share sheet via `navigator.share` when the UA is mobile;
+AbortError = user closed the sheet, silently ignored; desktop keeps clipboard copy + prompt fallback).
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
 2. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
-3. Preset `previewThumbnail`s in the picker.
+3. Preset `previewThumbnail`s in the picker (deterministic mini-renders; the headless QA pipeline
+   already produces exactly these — generate once, commit under `public/presets/`).
 4. Faint drop-shadow on dry paint (off-by-default).
-5. "Del oppsettet" could also offer the Web Share API (`navigator.share`) on mobile.
 
 ## 7. How to develop & VERIFY in this environment (important gotchas)
 

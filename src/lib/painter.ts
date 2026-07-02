@@ -766,7 +766,11 @@ function renderOnePoint(
     const x1 = p.fromX * canvasSize;
     const y1 = p.fromY * canvasSize;
     const d = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    if (d < canvasSize * 0.15 && d > 0.5) {
+    // Both bounds scale with resolution so the export replays exactly what live
+    // drew: live paints every merged segment (≥ 0.4px at 3072), and a fixed
+    // 0.5px floor silently dropped the dense-center micro-segments at export
+    // sizes ≤ 3072. 1e-4 · canvasSize ≈ the live 0.3px floor, scaled.
+    if (d < canvasSize * 0.15 && d > canvasSize * 1e-4) {
       const t2 = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
       const t1 = getSymmetryTransforms(x1, y1, canvasSize, symmetry);
       for (let i = 0; i < t2.length; i++) {

@@ -83,9 +83,24 @@ function HomeInner() {
     }
   }, [showToast]);
 
-  // Copy a link that reproduces the current setup (settings + seed) exactly.
+  // Share a link that reproduces the current setup (settings + seed) exactly.
+  // On mobile the native share sheet is the natural gesture; desktop copies.
   const handleShare = useCallback(async () => {
     const url = buildShareUrl(settings);
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: 'Pendelkunst',
+          text: 'Gjenskap pendelmaleriet mitt — alle innstillinger og frøet ligger i lenken.',
+          url,
+        });
+        return;
+      } catch (err) {
+        if ((err as DOMException)?.name === 'AbortError') return; // user closed the sheet
+        // Share failed for another reason — fall through to clipboard.
+      }
+    }
     try {
       await navigator.clipboard.writeText(url);
       showToast('Delingslenke kopiert! 🔗');
