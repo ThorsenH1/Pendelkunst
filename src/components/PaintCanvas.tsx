@@ -6,6 +6,7 @@ import {
   calcPosition, calcVelocity, isSimulationDone, prepareHarmonograph,
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
+  calcStreamBreakup,
 } from '@/lib/physics';
 import { drawThickStroke, drawSplashSplat, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
@@ -51,6 +52,9 @@ export default function PaintCanvas({
   const totalFlow = useRef(0);
   const prevHolePx = useRef<Map<number, { x: number; y: number }>>(new Map());
   const prevHoleNorm = useRef<Map<number, { x: number; y: number }>>(new Map());
+  // Plateau–Rayleigh sputter: per-hole draw/gap state while the dying stream
+  // breaks into drops (remaining = normalized distance left in the current phase).
+  const sputter = useRef<Map<number, { draw: boolean; remaining: number }>>(new Map());
   const prevStateRef = useRef<SimulationState>('idle');
   const seedRef = useRef(1);
   // Per-run seeded rng: jitter and splash decisions are reproducible from settings.seed.
@@ -148,6 +152,7 @@ export default function PaintCanvas({
     prevVel.current = { vx: 0, vy: 0 };
     prevHolePx.current.clear();
     prevHoleNorm.current.clear();
+    sputter.current.clear();
   }, []);
 
   // ── State transitions ──
@@ -367,7 +372,6 @@ export default function PaintCanvas({
 
           const px = (hx + jx) * PAINT_SIZE;
           const py = (hy + jy) * PAINT_SIZE;
-          const pr = jr * PAINT_SIZE;
 
           const normX = hx + jx;
           const normY = hy + jy;
@@ -380,31 +384,59 @@ export default function PaintCanvas({
           // Merge micro-segments: the dying pendulum moves less than a pixel per
           // step — carry until the segment is long enough to actually draw.
           if (segLen >= MIN_SEGMENT) {
-            const strokeSeed = nextSeed();
-            const prev = prevHolePx.current.get(h);
-            if (prev) {
-              const d = Math.sqrt((px - prev.x) ** 2 + (py - prev.y) ** 2);
-              if (d < PAINT_SIZE * 0.15 && d > 0.3) {
-                const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
-                const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
-                for (let i = 0; i < ts.length; i++) {
-                  drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i), shadowOn);
+            // Plateau–Rayleigh sputter: when the bucket runs low, the thin stream
+            // pinches into drops — the line alternates beads and gaps instead of
+            // stopping dead. Pen-up segments advance the anchor (a real gap) and
+            // store nothing, so the WYSIWYG export replays identically for free.
+            const starve = calcStreamBreakup(normFlow, ps.viscosity);
+            let penDown = true;
+            if (starve > 0) {
+              let st = sputter.current.get(h);
+              if (!st) {
+                st = { draw: true, remaining: jr * (2 + rng() * 3) };
+                sputter.current.set(h, st);
+              }
+              st.remaining -= segLen;
+              if (st.remaining <= 0) {
+                st.draw = !st.draw;
+                st.remaining = st.draw
+                  ? jr * (2 + rng() * 3)                 // one drop's worth of line
+                  : jr * (1 + rng() * 2) * (6 * starve); // gaps widen as the stream starves
+              }
+              penDown = st.draw;
+            } else {
+              sputter.current.delete(h);
+            }
+
+            if (penDown) {
+              // Detaching drops bulge: beads are slightly fatter than the starved stream.
+              const drawR = starve > 0 ? jr * (1 + starve * 0.35) : jr;
+              const strokeSeed = nextSeed();
+              const prev = prevHolePx.current.get(h);
+              if (prev) {
+                const d = Math.sqrt((px - prev.x) ** 2 + (py - prev.y) ** 2);
+                if (d < PAINT_SIZE * 0.15 && d > 0.3) {
+                  const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
+                  const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
+                  for (let i = 0; i < ts.length; i++) {
+                    drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, drawR * PAINT_SIZE, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i), shadowOn);
+                  }
                 }
               }
+
+              pointsRef.current.push({
+                x: normX, y: normY,
+                fromX: prevNorm?.x, fromY: prevNorm?.y,
+                radius: drawR, color: hole.color, opacity,
+                viscosity: ps.viscosity,
+                brushType: ps.brushType,
+                speed,
+                seed: strokeSeed,
+                blend: wet || undefined,
+                shadow: shadowOn || undefined,
+              });
             }
             prevHolePx.current.set(h, { x: px, y: py });
-
-            pointsRef.current.push({
-              x: normX, y: normY,
-              fromX: prevNorm?.x, fromY: prevNorm?.y,
-              radius: jr, color: hole.color, opacity,
-              viscosity: ps.viscosity,
-              brushType: ps.brushType,
-              speed,
-              seed: strokeSeed,
-              blend: wet || undefined,
-              shadow: shadowOn || undefined,
-            });
             prevHoleNorm.current.set(h, { x: normX, y: normY });
           }
           totalFlow.current += normFlow * DT * 0.01;

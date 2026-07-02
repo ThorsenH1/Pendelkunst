@@ -217,6 +217,17 @@ export function calcDropOpacity(baseOpacity: number, radius: number, baseRadius:
   return Math.min(baseOpacity * (0.82 + sizeRatio * 0.13) * (0.9 + flowRate * 0.1), 1);
 }
 
+/** Plateau–Rayleigh breakup: how starved the paint stream is (0 = continuous jet,
+ *  1 = fully broken into drops). A real thin stream from a near-empty bucket doesn't
+ *  just stop — surface tension pinches it into droplets, so the drawn line sputters
+ *  into beads and gaps before the paint runs out. Viscous paint holds a continuous
+ *  thread longer (breakup onset at lower flow). */
+export function calcStreamBreakup(normFlow: number, viscosity: number): number {
+  const onset = 0.14 + (1 - viscosity) * 0.08;
+  if (normFlow >= onset) return 0;
+  return Math.min(1, Math.pow(1 - normFlow / onset, 1.4));
+}
+
 export function calcCentripetalAccel(vx: number, vy: number, prevVx: number, prevVy: number, dt: number): number {
   const ax = (vx - prevVx) / dt;
   const ay = (vy - prevVy) / dt;

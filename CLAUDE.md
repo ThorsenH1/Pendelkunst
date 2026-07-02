@@ -49,8 +49,16 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
   long run. 1.0907 (Kaotisk) is a deliberate airy woven-web look. Simple fractions (3:2, 5:3, 2:1)
   are Lissajous territory and now slowly rotate — usable for variety.
 - The dense center that appears late in a run is the pendulum settling (physically real); control
-  its size with damping (ends the run sooner) — bucketCapacity mostly does NOT bind because
-  Torricelli flow slows as the bucket empties.
+  its size with damping (ends the run sooner). bucketCapacity DOES bind for the heavier presets
+  (measured 2026-07: Kaotisk/Galakse/Regnbue end by empty bucket; Rosett bottoms out at
+  paintLevel 0.076) — Torricelli flow slows the drain but does not stop it.
+- **Plateau–Rayleigh sputter (2026-07):** a starving stream (bucket almost empty) breaks into
+  drops instead of stopping dead. `calcStreamBreakup(normFlow, viscosity)` in `physics.ts` returns
+  starvation 0–1 (onset `0.14 + (1−viscosity)·0.08`; viscous paint holds a thread longer); the
+  PaintCanvas hole loop then alternates bead segments (drawn slightly fatter, ×(1+0.35·starve))
+  and pen-up gaps (per-hole state machine, gaps widen as starve→1). Pen-up segments advance the
+  stroke anchor and store NO point — the WYSIWYG export replays identically for free. This turns
+  the flat solid fields in the dense center into granular drip texture (see the changed presets).
 - `calcBobHeight` must depend on L (longer string → smaller swing angle → flatter arc → less spread).
 
 ## 3. WYSIWYG export — the core invariant (READ BEFORE TOUCHING `painter.ts`)
@@ -147,7 +155,14 @@ deliberately **rng-FREE** and scaled purely by stroke radius, so (a) shadow-off 
 byte-identical to pre-feature output — verified 9/9 hashes vs HEAD — and (b) live/export always
 match at any size. Per-brush width via `SHADOW_WIDTH` (spray = 0: mist has no ridge); tuning knobs
 `SHADOW_ALPHA = 0.1`, `SHADOW_OFFSET = 0.45` (light from top-left). If you add a brush, add its
-`SHADOW_WIDTH` entry. "Overrask meg" enables it 25% of the time on light grounds only).
+`SHADOW_WIDTH` entry. "Overrask meg" enables it 25% of the time on light grounds only)
+· Plateau–Rayleigh sputter (see §2; 2026-07): the dying stream beads into drops before the bucket
+empties. QA-verified: Default/Organisk/Geometrisk/Zen/Blomst render byte-identically to pre-feature
+(they never starve); Rosett/Kaotisk/Galakse/Regnbue gained drip texture in the dense center and
+their 4 picker thumbnails were regenerated. Kaotisk's full run is now ≈778k points (was ≈888k).
+**QA gotcha:** the headless sim must mirror the sputter state machine EXACTLY, including rng call
+order per hole: jitter jx/jy/jr → sputter rng (ONLY when starve > 0: 1 call on state init, 1 on
+each bead↔gap flip) → splash rngs. A mismatch silently desyncs every later stroke seed.
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
