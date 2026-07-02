@@ -89,6 +89,7 @@ src/lib/physics.ts    Pendulum→harmonograph, flow (Torricelli), drop radius/op
 src/lib/painter.ts    Seeded RNG, 7 brushes, splash, blob, getSymmetryTransforms, renderPointsHighRes[Async].
 src/lib/presets.ts    createDefaultSettings, 8 presets, randomSettings() ("Overrask meg").
 src/lib/gallery.ts    IndexedDB save/load/list/delete (thumbnail + full PNG + points + settings).
+src/lib/share.ts      Shareable links: settings+seed ⇄ base64url `#del=` fragment, sanitized decode.
 src/components/PaintCanvas.tsx  The engine: rAF loop, 2048px offscreen canvas, blit, HUD, drop UI.
 src/components/ControlPanel.tsx All controls + actions + a11y (aria-pressed) + shortcut hints.
 src/components/ExportDialog.tsx Resolution/format picker, async WYSIWYG render + progress.
@@ -123,15 +124,17 @@ canvas-filling via headless montage) · paper texture toggle (`paperTexture`, de
 export) · wet-on-wet multiply blending (`paint.wetBlend`, stored per point as `blend`) · pendulum
 rig overlay (`showRig`, display-only) · video capture (MediaRecorder → WebM/MP4 on the display
 canvas) · seed surfaced in UI (`settings.seed`; run rng = `mulberry32(imul(seed,2654435761)+layer·7919)`)
-· "Slik gjør du det hjemme" help dialog.
+· "Slik gjør du det hjemme" help dialog · shareable links (`share.ts`: `#del=<base64url(JSON)>`
+fragment; decode NEVER trusts the payload — every field is validated/clamped via
+`sanitizeSettings`, garbage → null; determinism verified: link round-trip → byte-identical PNG.
+Loaded on mount in `page.tsx`, then the fragment is stripped; "Del oppsettet" button copies it).
 
 Remaining:
-1. **Shareable links** — encode `settings` (incl. seed) in a URL query/fragment; no backend needed
-   for reproduction since a piece = settings + seed. (Server gallery would need a backend.)
-2. **i18n** (English toggle) to widen reach.
-3. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
-4. Preset `previewThumbnail`s in the picker.
-5. Faint drop-shadow on dry paint (off-by-default).
+1. **i18n** (English toggle) to widen reach.
+2. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
+3. Preset `previewThumbnail`s in the picker.
+4. Faint drop-shadow on dry paint (off-by-default).
+5. "Del oppsettet" could also offer the Web Share API (`navigator.share`) on mobile.
 
 ## 7. How to develop & VERIFY in this environment (important gotchas)
 

@@ -9,6 +9,7 @@ import HelpDialog from '@/components/HelpDialog';
 import { SimulationSettings, SimulationState, PaintPoint } from '@/lib/types';
 import { createDefaultSettings, randomSettings, newSeed } from '@/lib/presets';
 import { savePainting } from '@/lib/gallery';
+import { readShareFromLocation, buildShareUrl } from '@/lib/share';
 
 // Error boundary — a runtime error should never leave a blank white screen.
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -50,20 +51,49 @@ function HomeInner() {
   const [showHelp, setShowHelp] = useState(false);
   const [showPanel, setShowPanel] = useState(true);
   const [saveMsg, setSaveMsg] = useState('');
+  const [toast, setToast] = useState('');
   const [loadImage, setLoadImage] = useState<Blob | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const pointsRef = useRef<PaintPoint[]>([]);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const undoStack = useRef<Array<{ image: Blob; pointCount: number }>>([]);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSimState = useCallback((s: SimulationState) => setSimState(s), []);
   const handleSettings = useCallback((s: SimulationSettings) => setSettings(s), []);
   const handleImageLoaded = useCallback(() => setLoadImage(null), []);
 
-  // Roll a fresh seed after mount (not in the initializer — SSR/hydration must match).
-  useEffect(() => {
-    setSettings((s) => ({ ...s, seed: newSeed() }));
+  const showToast = useCallback((msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => setToast(''), 3000);
   }, []);
+
+  // On mount: load a shared setup from the URL fragment if present, otherwise roll
+  // a fresh seed. (Runs after mount, not in the initializer — SSR/hydration must match.)
+  useEffect(() => {
+    const shared = readShareFromLocation();
+    if (shared) {
+      setSettings(shared);
+      showToast('Delt oppsett lastet inn — trykk Start for å male 🎨');
+      // Strip the fragment so later edits aren't confused with the old link.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    } else {
+      setSettings((s) => ({ ...s, seed: newSeed() }));
+    }
+  }, [showToast]);
+
+  // Copy a link that reproduces the current setup (settings + seed) exactly.
+  const handleShare = useCallback(async () => {
+    const url = buildShareUrl(settings);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Delingslenke kopiert! 🔗');
+    } catch {
+      // Clipboard can be blocked (permissions / non-secure context) — show it instead.
+      window.prompt('Kopier delingslenken:', url);
+    }
+  }, [settings, showToast]);
 
   const handleSave = useCallback(async () => {
     const canvas = offscreenRef.current;
@@ -213,6 +243,13 @@ function HomeInner() {
             <span className="text-xs text-gray-300">Ferdig</span>
           </div>
         )}
+
+        {/* Toast (share link copied / shared setup loaded) */}
+        {toast && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur rounded-full px-4 py-2 text-sm text-gray-200 shadow-lg z-30" role="status">
+            {toast}
+          </div>
+        )}
       </div>
 
       {/* Side panel */}
@@ -230,6 +267,7 @@ function HomeInner() {
           onNewPainting={handleNewPainting}
           onUndo={handleUndo}
           onShowHelp={() => setShowHelp(true)}
+          onShare={handleShare}
           canUndo={canUndo}
           saveMsg={saveMsg}
         />
