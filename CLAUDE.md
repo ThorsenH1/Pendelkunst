@@ -172,6 +172,9 @@ Remaining:
   Render all 8 presets + Default in a montage and eyeball that they fill the canvas like real
   pendulum art before shipping. The same pipeline regenerates the preset picker thumbnails
   (480px render → 240px webp q82 → `public/presets/<slug>.webp`) — do that in the same pass.
+- **Multiline/quoted commit messages fail in Windows PowerShell 5.1** (embedded `"` splits the
+  `-m` argument into pathspecs even inside a here-string). Write the message to a scratch file
+  and run `git commit -F <file>` from Git Bash instead.
 - **Never edit UTF-8 source with Windows PowerShell 5.1 string ops** (`Get-Content -Raw` →
   `-replace` → `Set-Content`): it decodes as ANSI and writes back mojibake (ø→Ã¸, —→â€”, broken
   emoji) plus a BOM. Use the Edit/Write file tools for source edits; PowerShell only for commands.
