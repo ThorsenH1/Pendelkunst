@@ -116,7 +116,8 @@ canvas+points (new layer). `running ↔ paused` must **continue** (never reset `
 - All UI copy in **Norwegian (Bokmål)**.
 - No `localStorage`/`sessionStorage` reliance for art data — gallery uses IndexedDB.
 - Keep the hot loop allocation-light; guard runaway runs with `MAX_POINTS` (1M) in `PaintCanvas`.
-  With trail-point splash + segment merging, every preset's FULL run fits under it (max ≈ 830k).
+  With trail-point splash + segment merging, every preset's FULL run fits under it (max ≈ 890k,
+  Kaotisk — re-measured 2026-07 in headless QA).
 - Live paint canvas is `PAINT_SIZE = 3072` (raised from 2048 for save/export quality).
 - Accessibility: `aria-pressed` on toggles, `aria-label`s, visible `:focus-visible`, honor reduced motion.
 - Determinism in `painter.ts` is sacred (see §3).
@@ -139,12 +140,18 @@ AbortError = user closed the sheet, silently ignored; desktop keeps clipboard co
 deterministic mini-renders of each preset at seed 1 — headless sim at 480px via renderPointsHighRes,
 downscaled to 240px webp q82, ~8–23 KB each. **Regenerate them with the headless QA pipeline
 whenever a preset or the physics/paint code changes**, otherwise the picker lies about the result.
-No `loading="lazy"` on these — 8 × ~15 KB doesn't need it and lazy left them unloaded in preview QA).
+No `loading="lazy"` on these — 8 × ~15 KB doesn't need it and lazy left them unloaded in preview QA)
+· relief shadow on dry paint (`settings.paintShadow`, off by default, stored per point as `shadow`;
+"Relieffskygge på malingen" toggle in Realisme. `drawStrokeShadow`/splat-shadow in `painter.ts` are
+deliberately **rng-FREE** and scaled purely by stroke radius, so (a) shadow-off renders stay
+byte-identical to pre-feature output — verified 9/9 hashes vs HEAD — and (b) live/export always
+match at any size. Per-brush width via `SHADOW_WIDTH` (spray = 0: mist has no ridge); tuning knobs
+`SHADOW_ALPHA = 0.1`, `SHADOW_OFFSET = 0.45` (light from top-left). If you add a brush, add its
+`SHADOW_WIDTH` entry. "Overrask meg" enables it 25% of the time on light grounds only).
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
 2. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
-3. Faint drop-shadow on dry paint (off-by-default).
 
 ## 7. How to develop & VERIFY in this environment (important gotchas)
 

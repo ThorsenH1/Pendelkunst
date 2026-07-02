@@ -29,6 +29,7 @@ export function createDefaultSettings(): SimulationSettings {
     backgroundColor: '#faf8f5',
     paperTexture: 0,
     seed: 1,
+    paintShadow: false,
     showRig: true,
   };
 }
@@ -283,8 +284,10 @@ export function randomSettings(): SimulationSettings {
     ...base,
     seed: newSeed(),
     // Occasionally showcase the realism extras (texture always subtle;
-    // wet-on-wet only on light grounds where multiply blending reads correctly).
+    // wet-on-wet only on light grounds where multiply blending reads correctly;
+    // relief shadow only on light grounds where the shadow is visible).
     paperTexture: Math.random() < 0.35 ? rnd(0.3, 0.7) : 0,
+    paintShadow: !dark && Math.random() < 0.25,
     pendulum: {
       stringLength: rnd(0.6, 1.8),
       // Keep close to 1.0 — Airy precession draws the rosette; large detuning

@@ -86,6 +86,9 @@ export interface SimulationSettings {
   paperTexture?: number;
   /** Run seed: same seed + same settings → pixel-identical painting (reproducible art). */
   seed?: number;
+  /** Faint relief shadow under each stroke (light from top-left): the paint reads as
+   *  physically raised on the canvas. Off by default; stored per point → WYSIWYG export. */
+  paintShadow?: boolean;
   /** Show the swinging pendulum rig (string + paint container) while painting. UI-only. */
   showRig?: boolean;
 }
@@ -110,6 +113,8 @@ export interface PaintPoint {
   isSplash?: boolean;
   /** Wet-on-wet: render this point with multiply compositing (real pigment mixing). */
   blend?: boolean;
+  /** Relief shadow: draw a faint offset shadow under this point (paintShadow was on). */
+  shadow?: boolean;
   /** Splash-trail points: life decay per step. When set, (x, y, vx, vy, radius, decay)
    *  are the droplet's INITIAL state and the renderer replays the whole deterministic
    *  trajectory — one stored point per droplet instead of one per animation step. */

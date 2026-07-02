@@ -128,6 +128,52 @@ export function getSymmetryTransforms(x: number, y: number, size: number, sym: S
 }
 
 // ═══════════════════════════════════════════════════════════
+// DRY-PAINT RELIEF SHADOW (optional, off by default)
+// Real paint sits RAISED on the canvas; a low top-left light
+// casts a faint shadow down-right of every stroke, giving the
+// finished piece physical depth. Deliberately rng-FREE and
+// scaled purely by the stroke radius: old paintings (no shadow
+// flag) render byte-identically, and live/export always match.
+// ═══════════════════════════════════════════════════════════
+
+const SHADOW_ALPHA = 0.1;
+/** Shadow offset as a fraction of stroke radius — relief height ∝ paint thickness. */
+const SHADOW_OFFSET = 0.45;
+/** Per-brush shadow width factor ≈ each brush's effective line width. */
+const SHADOW_WIDTH: Record<BrushType, number> = {
+  'bucket': 1.0,
+  'fine-brush': 0.45,
+  'flat-brush': 1.3,
+  'marker': 0.7,
+  'drip-stick': 0.5,
+  'squeeze': 0.85,
+  'spray': 0, // scattered mist leaves no continuous ridge to shadow
+};
+
+function drawStrokeShadow(
+  ctx: CanvasRenderingContext2D,
+  x1: number, y1: number, x2: number, y2: number,
+  radius: number, opacity: number, brushType: BrushType,
+) {
+  const w = SHADOW_WIDTH[brushType];
+  const r = radius * w;
+  if (w <= 0 || r < 0.4) return;
+  const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+  if (dist < 0.1) return;
+  const off = r * SHADOW_OFFSET;
+  ctx.save();
+  ctx.globalAlpha = Math.min(opacity, 1) * SHADOW_ALPHA;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = r * 2.15;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1 + off, y1 + off);
+  ctx.lineTo(x2 + off, y2 + off);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
 // BRUSH-TYPE STROKE RENDERERS  (all deterministic via rng)
 // ═══════════════════════════════════════════════════════════
 
@@ -492,9 +538,12 @@ export function drawThickStroke(
   brushType: BrushType = 'bucket',
   speed: number = 0,
   seed: number = 1,
+  shadow: boolean = false,
 ) {
   if (radius < 0.3) return;
   const rng = mulberry32(seed);
+
+  if (shadow) drawStrokeShadow(ctx, x1, y1, x2, y2, radius, opacity, brushType);
 
   switch (brushType) {
     case 'bucket':      strokeBucket(ctx, x1, y1, x2, y2, radius, color, opacity, viscosity, speed, rng); break;
@@ -603,6 +652,7 @@ export function drawSplashSplat(
   vxNorm: number, vyNorm: number,
   viscosity: number,
   seed: number,
+  shadow: boolean = false,
 ) {
   if (r < 0.2) return;
   const rng = mulberry32(seed);
@@ -612,6 +662,19 @@ export function drawSplashSplat(
   // Fast impacts smear into elongated splats; thick paint stays rounder.
   const elong = Math.min(speed * 900, 2.5) * (1 - viscosity * 0.4);
   const angle = Math.atan2(vyNorm, vxNorm);
+
+  // Relief shadow first, offset down-right — rng-free (see drawStrokeShadow).
+  if (shadow && r >= 0.4) {
+    ctx.save();
+    ctx.translate(x + r * SHADOW_OFFSET, y + r * SHADOW_OFFSET);
+    ctx.rotate(angle);
+    ctx.globalAlpha = Math.min(opacity, 1) * SHADOW_ALPHA;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * (1.1 + elong * 0.5), r * Math.max(1.05 - elong * 0.14, 0.55), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.translate(x, y);
   ctx.rotate(angle);
@@ -652,6 +715,7 @@ export function drawSplashTrail(
   viscosity: number,
   canvasSize: number,
   symmetry: SymmetrySettings,
+  shadow: boolean = false,
 ) {
   let x = p.x, y = p.y, vx = p.vx, vy = p.vy, life = 1;
   const drag = splashDrag(viscosity);
@@ -663,7 +727,7 @@ export function drawSplashTrail(
   }
   const copies = getSymmetryTransforms(x * canvasSize, y * canvasSize, canvasSize, symmetry);
   for (let i = 0; i < copies.length; i++) {
-    drawSplashSplat(ctx, copies[i].x, copies[i].y, p.radius * canvasSize, p.color, p.opacity, vx, vy, viscosity, copySeed(p.seed, i));
+    drawSplashSplat(ctx, copies[i].x, copies[i].y, p.radius * canvasSize, p.color, p.opacity, vx, vy, viscosity, copySeed(p.seed, i), shadow);
   }
 }
 
@@ -745,7 +809,7 @@ function renderOnePoint(
       drawSplashTrail(
         ctx,
         { x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0, radius: p.radius, color: p.color, opacity: p.opacity, decay: p.decay, seed: baseSeed },
-        visc, canvasSize, symmetry,
+        visc, canvasSize, symmetry, p.shadow === true,
       );
       ctx.globalCompositeOperation = 'source-over';
       return;
@@ -774,7 +838,7 @@ function renderOnePoint(
       const t2 = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
       const t1 = getSymmetryTransforms(x1, y1, canvasSize, symmetry);
       for (let i = 0; i < t2.length; i++) {
-        drawThickStroke(ctx, t1[i].x, t1[i].y, t2[i].x, t2[i].y, r, p.color, p.opacity, visc, brush, spd, copySeed(baseSeed, i));
+        drawThickStroke(ctx, t1[i].x, t1[i].y, t2[i].x, t2[i].y, r, p.color, p.opacity, visc, brush, spd, copySeed(baseSeed, i), p.shadow === true);
       }
     }
   }

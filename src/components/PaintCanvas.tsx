@@ -297,6 +297,7 @@ export default function PaintCanvas({
       const prepared = prepareHarmonograph(s.pendulum, drop, s.throwMode, s.throwSpeed);
       const rng = runRngRef.current;
       const wet = ps.wetBlend === true;
+      const shadowOn = s.paintShadow === true;
 
       // When the run ends, any droplet still in the air lands NOW — the live
       // canvas must show every splat the export will replay.
@@ -312,7 +313,7 @@ export default function PaintCanvas({
           }
           const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
           for (let i = 0; i < copies.length; i++) {
-            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i));
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
           }
         }
         particles.current = [];
@@ -387,7 +388,7 @@ export default function PaintCanvas({
                 const ts = getSymmetryTransforms(px, py, PAINT_SIZE, sym);
                 const pts = getSymmetryTransforms(prev.x, prev.y, PAINT_SIZE, sym);
                 for (let i = 0; i < ts.length; i++) {
-                  drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i));
+                  drawThickStroke(paintCtx, pts[i].x, pts[i].y, ts[i].x, ts[i].y, pr, hole.color, opacity, ps.viscosity, ps.brushType, speed, copySeed(strokeSeed, i), shadowOn);
                 }
               }
             }
@@ -402,6 +403,7 @@ export default function PaintCanvas({
               speed,
               seed: strokeSeed,
               blend: wet || undefined,
+              shadow: shadowOn || undefined,
             });
             prevHoleNorm.current.set(h, { x: normX, y: normY });
           }
@@ -436,6 +438,7 @@ export default function PaintCanvas({
                   decay: particle.decay,
                   seed: particle.seed,
                   blend: wet || undefined,
+                  shadow: shadowOn || undefined,
                 });
               }
             }
@@ -459,7 +462,7 @@ export default function PaintCanvas({
           // Landed: splat.
           const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
           for (let i = 0; i < copies.length; i++) {
-            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i));
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
           }
           return false;
         });

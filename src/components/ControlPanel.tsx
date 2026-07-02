@@ -386,6 +386,15 @@ export default function ControlPanel({
         <p className="text-[10px] text-gray-500 mb-3 ml-6">Overlappende strøk blandes som ekte pigment. Best på lys bakgrunn.</p>
 
         <label className="flex items-center gap-2 text-gray-300 mb-1 cursor-pointer">
+          <input type="checkbox" checked={settings.paintShadow === true}
+            disabled={!canEdit}
+            onChange={(e) => update({ paintShadow: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500" />
+          <span className="text-sm">Relieffskygge på malingen</span>
+        </label>
+        <p className="text-[10px] text-gray-500 mb-3 ml-6">Svak slagskygge langs strøkene — malingen ser fysisk hevet ut. Best på lys bakgrunn, følger med i eksporten.</p>
+
+        <label className="flex items-center gap-2 text-gray-300 mb-1 cursor-pointer">
           <input type="checkbox" checked={settings.showRig !== false}
             onChange={(e) => update({ showRig: e.target.checked })}
             className="rounded border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500" />

@@ -102,6 +102,7 @@ export function sanitizeSettings(raw: unknown): SimulationSettings {
     backgroundColor: hexColor(s.backgroundColor, d.backgroundColor),
     paperTexture: num(s.paperTexture, 0, 1, 0),
     seed: Math.round(num(s.seed, 1, 999999, 1)),
+    paintShadow: bool(s.paintShadow, false),
     showRig: bool(s.showRig, true),
   };
 }
