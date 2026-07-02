@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState, MutableRefObject } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo, MutableRefObject } from 'react';
 import { SimulationSettings, SimulationState, PaintPoint, SplashParticle, DropPosition } from '@/lib/types';
 import {
   calcPosition, calcVelocity, isSimulationDone, prepareHarmonograph,
@@ -620,6 +620,29 @@ export default function PaintCanvas({
   const isThrow = settings.throwMode === 'throw-cw' || settings.throwMode === 'throw-ccw';
   const throwAngle = Math.atan2(dp.y, dp.x) + (settings.throwMode === 'throw-cw' ? Math.PI / 2 : -Math.PI / 2);
 
+  // ── Orbit preview: the path the pendulum WILL trace from here ──
+  // Computed with the exact same physics as the run (prepareHarmonograph +
+  // calcPosition), so the faint line honestly previews the opening loops —
+  // direction, roundness, precession. While hovering it follows the cursor, so
+  // you see the orbit BEFORE committing the click. Display-only overlay; canvas
+  // motion and paint flow are not part of the preview.
+  const previewSrc = hoveredDrop ?? dp;
+  const showPathPreview = simState === 'idle' || (simState === 'done' && hoveredDrop != null);
+  const previewPaths = useMemo(() => {
+    if (!showPathPreview) return null;
+    const prepared = prepareHarmonograph(settings.pendulum, previewSrc, settings.throwMode, settings.throwSpeed);
+    const pts: string[] = [];
+    const PREVIEW_T = 22; // seconds of simulated swing — enough to read the pattern's character
+    for (let t = 0; t <= PREVIEW_T; t += 0.04) {
+      const p = calcPosition(t, prepared);
+      pts.push(`${((0.5 + p.x * SCALE) * canvasSize).toFixed(1)},${((0.5 + p.y * SCALE) * canvasSize).toFixed(1)}`);
+    }
+    // First loops drawn stronger than the rest: start point and direction read clearly.
+    const split = Math.floor(pts.length * 0.3);
+    return { head: pts.slice(0, split + 1).join(' '), tail: pts.slice(split).join(' ') };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPathPreview, previewSrc.x, previewSrc.y, settings.pendulum, settings.throwMode, settings.throwSpeed, canvasSize]);
+
   return (
     <div ref={boxRef} className="flex-1 flex items-center justify-center w-full h-full relative">
       <div className="relative" style={{ width: canvasSize, height: canvasSize }}>
@@ -650,6 +673,13 @@ export default function PaintCanvas({
             <span className={`w-2 h-2 rounded-full ${recording ? 'bg-white animate-pulse' : 'bg-red-500'}`} />
             {recording ? 'Stopp opptak' : 'Ta opp video'}
           </button>
+        )}
+
+        {showPathPreview && previewPaths && (
+          <svg className="absolute inset-0 pointer-events-none" width={canvasSize} height={canvasSize} aria-hidden="true">
+            <polyline points={previewPaths.tail} fill="none" stroke="rgba(129,140,248,0.18)" strokeWidth="1" />
+            <polyline points={previewPaths.head} fill="none" stroke="rgba(129,140,248,0.45)" strokeWidth="1.2" />
+          </svg>
         )}
 
         {showDrop && (
@@ -705,8 +735,8 @@ export default function PaintCanvas({
             <div className="absolute bottom-3 left-0 right-0 text-center">
               <span className="text-[11px] bg-gray-900/80 backdrop-blur text-gray-400 px-3 py-1.5 rounded-full">
                 {isThrow
-                  ? 'Klikk for å plassere — pendelen kastes i sirkelbevegelse'
-                  : 'Klikk for å plassere pendelen — lenger ut = mer energi'}
+                  ? 'Klikk for å plassere — linjen viser banen pendelen vil male'
+                  : 'Klikk for å plassere — linjen viser banen (lenger ut = mer energi)'}
               </span>
             </div>
           </>

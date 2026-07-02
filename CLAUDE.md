@@ -191,6 +191,15 @@ viscosity ≤ 0.45 (Rosett/Geometrisk/Kaotisk/Galakse/Regnbue) render byte-ident
 pre-feature; Default/Organisk/Zen/Blomst differ (point counts +2–6%, max still Kaotisk ≈778k);
 organisk/zen/blomst picker thumbnails regenerated. **The headless QA sim must apply the coil
 offset identically** (computed after `radius`, added to the hole position before jitter).
+· orbit path preview (2026-07): in `idle` a faint indigo SVG polyline (PaintCanvas overlay)
+shows the trajectory the pendulum WILL trace — computed with the exact run physics
+(`prepareHarmonograph` + `calcPosition`, 22 s sampled at 0.04 s; first 30% drawn stronger so
+start + direction read). While hovering it follows the cursor (preview BEFORE the click);
+in `done` it shows only while hovering, so the finished piece stays clean. Hidden while
+running/paused. Display-only — zero WYSIWYG/determinism impact (2026-07 QA baseline re-verified:
+montage of 9 renders round & canvas-filling, same-seed/diff-seed determinism PASS, point counts
+unchanged, max Kaotisk ≈778k). Gotcha: compute the preview from the `settings` prop, NOT
+`sRef.current` — the ref updates in an effect after render, so it lags one render behind.
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
