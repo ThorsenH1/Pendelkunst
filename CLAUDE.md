@@ -59,6 +59,17 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
   and pen-up gaps (per-hole state machine, gaps widen as starve→1). Pen-up segments advance the
   stroke anchor and store NO point — the WYSIWYG export replays identically for free. This turns
   the flat solid fields in the dense center into granular drip texture (see the changed presets).
+- **Ballistic stream lag (2026-07):** the falling paint keeps the bucket's horizontal velocity,
+  so it lands AHEAD of the bucket — never straight below the hole. `calcStreamAdvection(vx, vy,
+  zHeight, L, exitSpeed)` in `physics.ts`: fall height = `STREAM_GAP` (0.10 m outlet height) +
+  swing-arc rise (`zHeight·L/2`, capped 0.25 m); fall time shortened by the downward Torricelli
+  exit speed (full bucket squirts fast → lands almost beneath the hole; a starving/viscous stream
+  drifts further). Applied once per step in PaintCanvas BEFORE the hole loop
+  (`cx = 0.5 + (pos.x + adv.dx)·SCALE + co.ox`), rng-FREE and baked into stored point
+  coordinates → WYSIWYG export replays it for free, rng call order untouched. Visible as a gentle
+  velocity-dependent sweep/twist of the whole pattern; the rig bob deliberately stays at the TRUE
+  bob position, so live you see the paint land ahead of the bucket. The orbit path preview applies
+  the same advection (full-bucket exit-speed approximation) so it shows where the PAINT goes.
 - `calcBobHeight` must depend on L (longer string → smaller swing angle → flatter arc → less spread).
 
 ## 3. WYSIWYG export — the core invariant (READ BEFORE TOUCHING `painter.ts`)
@@ -200,6 +211,15 @@ running/paused. Display-only — zero WYSIWYG/determinism impact (2026-07 QA bas
 montage of 9 renders round & canvas-filling, same-seed/diff-seed determinism PASS, point counts
 unchanged, max Kaotisk ≈778k). Gotcha: compute the preview from the `settings` prop, NOT
 `sRef.current` — the ref updates in an effect after render, so it lags one render behind.
+· ballistic stream lag (2026-07, see §2): the paint lands ahead of the bucket, not beneath it.
+Affects EVERY preset (the effect is always on), so there is no byte-identical baseline — QA is
+before/after montage comparison. Verified 2026-07: all 9 renders still round & canvas-filling,
+point counts ±0.1% (max Kaotisk ≈778k), same-seed/diff-seed determinism PASS; ALL 8 picker
+thumbnails regenerated in the same pass. **The headless QA sim must apply the advection
+identically**: once per step, before the hole loop, `cx = 0.5 + (pos.x + adv.dx)·SCALE + co.ox`
+with `exitSpeed = flowRate` — a mismatch shifts every stroke. The orbit preview uses
+`calcPaintFlowRate(0, viscosity, 1)` as its exit-speed approximation; keep that in sync if the
+flow model changes.
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.

@@ -268,6 +268,36 @@ export function calcRopeCoiling(
   return { dx: r * Math.cos(a), dy: r * Math.sin(a) };
 }
 
+// ── Ballistic stream lag ──
+// The paint leaves the outlet WITH the bucket's horizontal velocity and needs a
+// finite time to fall to the canvas, so it lands AHEAD of the bucket along the
+// direction of motion — never directly beneath the hole. The fall is shortened
+// by the stream's downward Torricelli exit speed (a full bucket squirts fast and
+// lands almost beneath the hole; a starving stream drifts further) and lengthened
+// when the swing arc lifts the bucket. Deliberately rng-FREE (pure function of
+// state) and baked into the stored point coordinates by PaintCanvas, so the
+// WYSIWYG export replays it for free and the rng call order is untouched.
+/** The bucket outlet hangs this far above the canvas (m) at rest. */
+const STREAM_GAP = 0.1;
+/** Cap on the extra fall height from the swing arc (m) — real painters keep the
+ *  rig low; without a cap wide throws on long strings overshoot the canvas. */
+const SWING_RISE_MAX = 0.25;
+
+/** Landing offset of the falling stream (physics units — caller applies SCALE).
+ *  `zHeight` is calcBobHeight's normalized rise (r²/L); the real rise is r²/2L. */
+export function calcStreamAdvection(
+  vx: number,
+  vy: number,
+  zHeight: number,
+  stringLength: number,
+  exitSpeed: number,
+): { dx: number; dy: number } {
+  const h = STREAM_GAP + Math.min(zHeight * stringLength * 0.5, SWING_RISE_MAX);
+  // h = v₀t + ½gt² → t = (√(v₀² + 2gh) − v₀)/g, v₀ = downward exit speed.
+  const tFall = (Math.sqrt(exitSpeed * exitSpeed + 2 * G * h) - exitSpeed) / G;
+  return { dx: vx * tFall, dy: vy * tFall };
+}
+
 export function calcCentripetalAccel(vx: number, vy: number, prevVx: number, prevVy: number, dt: number): number {
   const ax = (vx - prevVx) / dt;
   const ay = (vy - prevVy) / dt;

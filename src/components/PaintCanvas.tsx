@@ -6,7 +6,7 @@ import {
   calcPosition, calcVelocity, isSimulationDone, prepareHarmonograph,
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
-  calcStreamBreakup, calcRopeCoiling,
+  calcStreamBreakup, calcRopeCoiling, calcStreamAdvection,
 } from '@/lib/physics';
 import { drawThickStroke, drawSplashSplat, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
@@ -353,8 +353,12 @@ export default function PaintCanvas({
         const flowRate = calcPaintFlowRate(centripetal, ps.viscosity, paintLevel);
         const normFlow = Math.min(flowRate / 5, 1);
 
-        const cx = 0.5 + pos.x * SCALE + co.ox;
-        const cy = 0.5 + pos.y * SCALE + co.oy;
+        // Ballistic stream lag: the falling paint keeps the bucket's horizontal
+        // velocity, so it lands ahead of the bucket — never straight below it.
+        // rng-FREE, baked into the stored point coordinates (WYSIWYG for free).
+        const adv = calcStreamAdvection(vel.vx, vel.vy, zHeight, s.pendulum.stringLength, flowRate);
+        const cx = 0.5 + (pos.x + adv.dx) * SCALE + co.ox;
+        const cy = 0.5 + (pos.y + adv.dy) * SCALE + co.oy;
 
         for (let h = 0; h < ps.holes.length; h++) {
           const hole = ps.holes[h];
@@ -633,15 +637,22 @@ export default function PaintCanvas({
     const prepared = prepareHarmonograph(settings.pendulum, previewSrc, settings.throwMode, settings.throwSpeed);
     const pts: string[] = [];
     const PREVIEW_T = 22; // seconds of simulated swing — enough to read the pattern's character
+    // The painted line lands ahead of the bucket (ballistic stream lag) — include
+    // it so the preview shows where the PAINT goes, not where the bucket goes.
+    // Full-bucket exit speed is a fair approximation for the opening loops.
+    const exitSpeed = calcPaintFlowRate(0, settings.paint.viscosity, 1);
     for (let t = 0; t <= PREVIEW_T; t += 0.04) {
       const p = calcPosition(t, prepared);
-      pts.push(`${((0.5 + p.x * SCALE) * canvasSize).toFixed(1)},${((0.5 + p.y * SCALE) * canvasSize).toFixed(1)}`);
+      const v = calcVelocity(t, prepared);
+      const zh = calcBobHeight(p.x, p.y, settings.pendulum.stringLength);
+      const adv = calcStreamAdvection(v.vx, v.vy, zh, settings.pendulum.stringLength, exitSpeed);
+      pts.push(`${((0.5 + (p.x + adv.dx) * SCALE) * canvasSize).toFixed(1)},${((0.5 + (p.y + adv.dy) * SCALE) * canvasSize).toFixed(1)}`);
     }
     // First loops drawn stronger than the rest: start point and direction read clearly.
     const split = Math.floor(pts.length * 0.3);
     return { head: pts.slice(0, split + 1).join(' '), tail: pts.slice(split).join(' ') };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPathPreview, previewSrc.x, previewSrc.y, settings.pendulum, settings.throwMode, settings.throwSpeed, canvasSize]);
+  }, [showPathPreview, previewSrc.x, previewSrc.y, settings.pendulum, settings.throwMode, settings.throwSpeed, settings.paint.viscosity, canvasSize]);
 
   return (
     <div ref={boxRef} className="flex-1 flex items-center justify-center w-full h-full relative">
