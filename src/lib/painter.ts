@@ -692,6 +692,17 @@ export function drawSplashSplat(
     ctx.fill();
   }
 
+  // Coffee-ring rim: a drying droplet deposits pigment along its edge, so real
+  // splats dry with a darker outline. Watery paint rings hardest (capillary flow);
+  // thick paint barely at all. Deliberately rng-FREE and drawn before the
+  // satellites, so every previously rendered pixel stays byte-identical.
+  ctx.globalAlpha = Math.min(opacity, 1) * (0.16 - viscosity * 0.06);
+  ctx.strokeStyle = darken(color, 0.3);
+  ctx.lineWidth = r * 0.16;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r * (1.1 + elong * 0.5), r * Math.max(1.05 - elong * 0.14, 0.55), 0, 0, Math.PI * 2);
+  ctx.stroke();
+
   // Satellite droplets thrown ahead of the main splat.
   const satCount = r > 1 ? Math.round((rng() * 2 + elong) * (1 - viscosity * 0.5)) : 0;
   for (let i = 0; i < satCount; i++) {
@@ -799,6 +810,9 @@ function renderOnePoint(
   const brush = p.brushType ?? 'bucket';
   const spd = p.speed ?? 0;
   const baseSeed = p.seed ?? 1;
+  // Layers can be painted with different symmetry — replay each point with the
+  // symmetry it was PAINTED with (older points fall back to the global setting).
+  const sym = p.sym ?? symmetry;
 
   // Wet-on-wet points composite with multiply, like real pigment layering.
   ctx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
@@ -809,7 +823,7 @@ function renderOnePoint(
       drawSplashTrail(
         ctx,
         { x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0, radius: p.radius, color: p.color, opacity: p.opacity, decay: p.decay, seed: baseSeed },
-        visc, canvasSize, symmetry, p.shadow === true,
+        visc, canvasSize, sym, p.shadow === true,
       );
       ctx.globalCompositeOperation = 'source-over';
       return;
@@ -818,7 +832,7 @@ function renderOnePoint(
     if (r < 0.15) { ctx.globalCompositeOperation = 'source-over'; return; }
     const vx = (p.vx ?? 0) * canvasSize;
     const vy = (p.vy ?? 0) * canvasSize;
-    const copies = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
+    const copies = getSymmetryTransforms(x2, y2, canvasSize, sym);
     for (let i = 0; i < copies.length; i++) {
       drawSplashDot(ctx, copies[i].x, copies[i].y, r, p.color, p.opacity, vx, vy, visc, copySeed(baseSeed, i));
     }
@@ -835,8 +849,8 @@ function renderOnePoint(
     // 0.5px floor silently dropped the dense-center micro-segments at export
     // sizes ≤ 3072. 1e-4 · canvasSize ≈ the live 0.3px floor, scaled.
     if (d < canvasSize * 0.15 && d > canvasSize * 1e-4) {
-      const t2 = getSymmetryTransforms(x2, y2, canvasSize, symmetry);
-      const t1 = getSymmetryTransforms(x1, y1, canvasSize, symmetry);
+      const t2 = getSymmetryTransforms(x2, y2, canvasSize, sym);
+      const t1 = getSymmetryTransforms(x1, y1, canvasSize, sym);
       for (let i = 0; i < t2.length; i++) {
         drawThickStroke(ctx, t1[i].x, t1[i].y, t2[i].x, t2[i].y, r, p.color, p.opacity, visc, brush, spd, copySeed(baseSeed, i), p.shadow === true);
       }

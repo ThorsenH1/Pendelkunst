@@ -88,6 +88,12 @@ Export must be **pixel-identical (scaled) to the live canvas**. This is achieved
   draw floor is `d > canvasSize * 1e-4` (≈ the live 0.3px floor at 3072, scaled). A fixed pixel
   floor (the old `d > 0.5`) silently dropped ~9% of stroke segments — the dense center — at
   export sizes ≤ 3072. Do not reintroduce fixed-pixel thresholds in the export path.
+- **Symmetry is stored PER POINT (2026-07):** layers can be painted with different symmetry (the
+  controls are enabled in `done`), so `renderOnePoint` replays each point with `p.sym ?? symmetry`
+  — the global setting is only the fallback for older gallery points. Live landing splats use the
+  particle's launch-time `sym` too. Before this, the export re-mirrored ALL layers with the
+  current setting. `sym` is a shared reference to the settings object (cheap at 1M points); the
+  headless QA sim must attach it the same way.
 - `renderPointsHighResAsync` is chunked + yields to keep the UI responsive with a progress bar.
 
 If you add a brush or effect: thread `seed` through it, keep it deterministic, and store whatever
@@ -163,6 +169,15 @@ their 4 picker thumbnails were regenerated. Kaotisk's full run is now ≈778k po
 **QA gotcha:** the headless sim must mirror the sputter state machine EXACTLY, including rng call
 order per hole: jitter jx/jy/jr → sputter rng (ONLY when starve > 0: 1 call on state init, 1 on
 each bead↔gap flip) → splash rngs. A mismatch silently desyncs every later stroke seed.
+· per-point symmetry in the export (2026-07, see §3 — fixes multi-layer WYSIWYG when symmetry
+changes between layers; QA: splash-off presets byte-identical to pre-change, per-point-wins and
+no-sym-fallback both verified byte-exactly, two-layer scenario renders differently from the old
+buggy path) · coffee-ring rim on splash splats (2026-07): drying droplets deposit pigment along
+the edge, so splats dry with a faint darker outline — strongest for watery paint
+(`alpha = opacity·(0.16 − 0.06·viscosity)`, width `0.16r`, `darken(color, 0.3)`). The ring is
+deliberately **rng-FREE and drawn before the satellites**, so every previously rendered pixel
+stays byte-identical; the 5 splash presets' picker thumbnails were regenerated (non-splash
+Geometrisk/Zen/Blomst verified byte-identical).
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.

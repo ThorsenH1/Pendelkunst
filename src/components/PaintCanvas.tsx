@@ -316,7 +316,7 @@ export default function PaintCanvas({
             p.vy *= drag;
             p.life -= p.decay;
           }
-          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
+          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, p.sym ?? sym);
           for (let i = 0; i < copies.length; i++) {
             drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
           }
@@ -434,6 +434,7 @@ export default function PaintCanvas({
                 seed: strokeSeed,
                 blend: wet || undefined,
                 shadow: shadowOn || undefined,
+                sym,
               });
             }
             prevHolePx.current.set(h, { x: px, y: py });
@@ -455,6 +456,7 @@ export default function PaintCanvas({
                   radius: splashR, color: hole.color, life: 1,
                   decay: 0.015 + rng() * 0.05 + ps.viscosity * 0.03,
                   seed: nextSeed(),
+                  sym,
                 };
                 particles.current.push(particle);
                 // ONE stored point per droplet: the export replays the whole
@@ -471,6 +473,7 @@ export default function PaintCanvas({
                   seed: particle.seed,
                   blend: wet || undefined,
                   shadow: shadowOn || undefined,
+                  sym,
                 });
               }
             }
@@ -492,7 +495,7 @@ export default function PaintCanvas({
           p.life -= p.decay;
           if (p.life > 0) return true;
           // Landed: splat.
-          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, sym);
+          const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, p.sym ?? sym);
           for (let i = 0; i < copies.length; i++) {
             drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
           }

@@ -119,6 +119,11 @@ export interface PaintPoint {
    *  are the droplet's INITIAL state and the renderer replays the whole deterministic
    *  trajectory — one stored point per droplet instead of one per animation step. */
   decay?: number;
+  /** Symmetry active when this point was painted. Layers can be painted with different
+   *  symmetry, so the export replays each point with ITS OWN symmetry — not the current
+   *  global setting. Absent on older points → fall back to the setting passed in.
+   *  Stored as a shared reference (one object per settings change), so it is cheap. */
+  sym?: SymmetrySettings;
 }
 
 export interface SplashParticle {
@@ -132,6 +137,9 @@ export interface SplashParticle {
   decay: number;
   /** Stable seed for this particle's deterministic appearance. */
   seed: number;
+  /** Symmetry at launch — the landing splat must use the SAME symmetry as the stored
+   *  point, even if the user changes symmetry while the droplet is mid-air. */
+  sym?: SymmetrySettings;
 }
 
 export type SimulationState = 'idle' | 'running' | 'paused' | 'done';
