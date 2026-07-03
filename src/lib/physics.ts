@@ -298,6 +298,33 @@ export function calcStreamAdvection(
   return { dx: vx * tFall, dy: vy * tFall };
 }
 
+// ── Terminal drain pool ──
+// When the swing has died below the stop threshold the bucket hangs (almost)
+// still over one spot. If paint remains, it doesn't vanish — it keeps draining
+// straight down and spreads into a puddle at the rest point, exactly like the
+// dense center pool of a real pendulum piece left to finish on its own.
+// (Runs that end because the bucket is EMPTY, or that the artist stops by hand
+// — the "lift the bucket away" move — get no pool.)
+
+/** Pools smaller than this (normalized units ≈ 6px live) are skipped entirely,
+ *  so the threshold is resolution-independent — never a fixed pixel floor. */
+export const END_POOL_MIN_RADIUS = 0.002;
+
+/** Radius of the terminal drain pool (normalized canvas units). The remaining
+ *  volume drains into a disc, so area ∝ volume → r ∝ √V; watery paint spreads
+ *  wider, thick paint mounds up. Capped — a real canvas only absorbs so much. */
+export function calcEndPoolRadius(
+  paintLevel: number,
+  bucketCapacity: number,
+  holeCount: number,
+  viscosity: number,
+): number {
+  if (paintLevel <= 0.01) return 0;
+  const vol = (paintLevel * bucketCapacity) / Math.max(holeCount, 1);
+  const spread = 0.8 + (1 - viscosity) * 0.7;
+  return Math.min(0.0035 * Math.sqrt(vol) * spread, 0.028);
+}
+
 export function calcCentripetalAccel(vx: number, vy: number, prevVx: number, prevVy: number, dt: number): number {
   const ax = (vx - prevVx) / dt;
   const ay = (vy - prevVy) / dt;

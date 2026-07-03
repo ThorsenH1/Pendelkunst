@@ -119,6 +119,9 @@ export interface PaintPoint {
    *  are the droplet's INITIAL state and the renderer replays the whole deterministic
    *  trajectory — one stored point per droplet instead of one per animation step. */
   decay?: number;
+  /** Terminal drain pool: the puddle the remaining paint forms where the bucket ends
+   *  up hanging after the swing dies. Rendered with drawEndPool (radius = pool size). */
+  isPool?: boolean;
   /** Symmetry active when this point was painted. Layers can be painted with different
    *  symmetry, so the export replays each point with ITS OWN symmetry — not the current
    *  global setting. Absent on older points → fall back to the setting passed in.

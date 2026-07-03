@@ -718,6 +718,75 @@ export function drawSplashSplat(
   ctx.restore();
 }
 
+// ═══════════════════════════════════════════════════════════
+// TERMINAL DRAIN POOL
+// When the swing dies with paint left, the bucket hangs still
+// and drains the rest straight down into a puddle. Drawn once
+// per hole at run end; ONE stored PaintPoint (isPool) replays
+// it in the export. Fully deterministic via the point's seed;
+// everything scales with r, so live/export match at any size.
+// ═══════════════════════════════════════════════════════════
+
+export function drawEndPool(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  r: number,
+  color: string,
+  opacity: number,
+  viscosity: number,
+  seed: number,
+  shadow: boolean = false,
+) {
+  if (r <= 0.5) return;
+  const rng = mulberry32(seed);
+  ctx.save();
+
+  // Relief shadow first (rng-FREE, like drawStrokeShadow): a pool is flat,
+  // so the offset is half a stroke's.
+  if (shadow) {
+    ctx.globalAlpha = Math.min(opacity, 1) * SHADOW_ALPHA;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(x + r * SHADOW_OFFSET * 0.5, y + r * SHADOW_OFFSET * 0.5, r * 0.98, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Opaque body: main disc + seeded edge lobes → a natural, slightly
+  // irregular puddle outline. Watery paint spreads into wider lobes.
+  ctx.globalAlpha = Math.min(opacity * 0.96, 1);
+  ctx.fillStyle = varyColor(color, 0.012, rng);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.94, 0, Math.PI * 2);
+  ctx.fill();
+  const lobes = 8 + Math.floor(rng() * 5);
+  for (let i = 0; i < lobes; i++) {
+    const a = rng() * Math.PI * 2;
+    const lr = r * (0.14 + rng() * 0.2) * (0.75 + (1 - viscosity) * 0.5);
+    const d = r * 0.94 - lr * (0.15 + rng() * 0.35);
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, lr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Coffee-ring rim: the drying puddle deposits pigment along its edge —
+  // strongest for watery paint (same physics as the splash splats).
+  ctx.globalAlpha = Math.min(opacity, 1) * (0.15 - viscosity * 0.05);
+  ctx.strokeStyle = darken(color, 0.3);
+  ctx.lineWidth = Math.max(r * 0.06, 0.5);
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.96, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Wet sheen: soft highlight up-left — fresh paint reflects the light.
+  ctx.globalAlpha = Math.min(opacity, 1) * 0.09 * (1 - viscosity * 0.35);
+  ctx.fillStyle = lighten(color, 0.6);
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.28, y - r * 0.3, r * 0.36, r * 0.22, -0.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
 /** Replay one droplet's deterministic flight (drawing nothing in the air) and
  *  draw the landing splat — EXACTLY the same integration as the live loop. */
 export function drawSplashTrail(
@@ -816,6 +885,16 @@ function renderOnePoint(
 
   // Wet-on-wet points composite with multiply, like real pigment layering.
   ctx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
+
+  if (p.isPool) {
+    // Terminal drain pool — one point per hole, drawn at run end.
+    const copies = getSymmetryTransforms(x2, y2, canvasSize, sym);
+    for (let i = 0; i < copies.length; i++) {
+      drawEndPool(ctx, copies[i].x, copies[i].y, r, p.color, p.opacity, visc, copySeed(baseSeed, i), p.shadow === true);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    return;
+  }
 
   if (p.isSplash) {
     if (p.decay != null) {

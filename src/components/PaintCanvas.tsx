@@ -7,8 +7,9 @@ import {
   calcPaintFlowRate, calcDropRadius, calcDropOpacity, calcBobHeight,
   calcCentripetalAccel, shouldSplash, calcPaintLevel, calcCanvasOffset,
   calcStreamBreakup, calcRopeCoiling, calcStreamAdvection,
+  calcEndPoolRadius, END_POOL_MIN_RADIUS,
 } from '@/lib/physics';
-import { drawThickStroke, drawSplashSplat, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
+import { drawThickStroke, drawSplashSplat, drawEndPool, drawPaperTexture, getSymmetryTransforms, copySeed, mulberry32, Rng, SPLASH_GRAVITY, splashDrag } from '@/lib/painter';
 
 const PAINT_SIZE = 3072;
 const STEPS_PER_FRAME = 14;
@@ -327,8 +328,49 @@ export default function PaintCanvas({
         particles.current = [];
         paintCtx.globalCompositeOperation = 'source-over';
       };
-      const finishRun = () => {
+      // Terminal drain pool: when the swing has died away with paint left, the
+      // bucket hangs still and drains the rest straight down into a puddle at
+      // the rest point (per hole). rng-FREE in the run loop — only the plain
+      // nextSeed() counter after the last stroke — so every earlier point is
+      // untouched; ONE stored isPool-point per hole replays it in the export.
+      // Called ONLY when the run ends by settling: an empty bucket has nothing
+      // left to drain, and stopping by hand = lifting the bucket away.
+      const depositEndPool = (t: number) => {
+        const paintLevel = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
+        const poolR = calcEndPoolRadius(paintLevel, ps.bucketCapacity, ps.holes.length, ps.viscosity);
+        if (poolR < END_POOL_MIN_RADIUS) return;
+        const pos = calcPosition(t, prepared);
+        const co = calcCanvasOffset(t, s.canvasMotion);
+        const cx = 0.5 + pos.x * SCALE + co.ox;
+        const cy = 0.5 + pos.y * SCALE + co.oy;
+        paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
+        for (let h = 0; h < ps.holes.length; h++) {
+          const hole = ps.holes[h];
+          const nx = cx + hole.offsetX;
+          const ny = cy + hole.offsetY;
+          const seed = nextSeed();
+          const copies = getSymmetryTransforms(nx * PAINT_SIZE, ny * PAINT_SIZE, PAINT_SIZE, sym);
+          for (let i = 0; i < copies.length; i++) {
+            drawEndPool(paintCtx, copies[i].x, copies[i].y, poolR * PAINT_SIZE, hole.color, ps.opacity, ps.viscosity, copySeed(seed, i), shadowOn);
+          }
+          pointsRef.current.push({
+            x: nx, y: ny,
+            radius: poolR, color: hole.color, opacity: ps.opacity,
+            viscosity: ps.viscosity,
+            seed,
+            isPool: true,
+            blend: wet || undefined,
+            shadow: shadowOn || undefined,
+            sym,
+          });
+        }
+        paintCtx.globalCompositeOperation = 'source-over';
+      };
+      // The pool drains AFTER the last airborne droplets have landed, so it is
+      // deposited (and stored) last — live draw order matches the export replay.
+      const finishRun = (endPoolT?: number) => {
         landRemainingParticles();
+        if (endPoolT !== undefined) depositEndPool(endPoolT);
         cbRef.current('done');
       };
 
@@ -339,7 +381,7 @@ export default function PaintCanvas({
 
       for (let step = 0; step < STEPS_PER_FRAME; step++) {
         const t = tRef.current;
-        if (isSimulationDone(t, prepared)) { finishRun(); return; }
+        if (isSimulationDone(t, prepared)) { finishRun(t); return; }
 
         const pos = calcPosition(t, prepared);
         const vel = calcVelocity(t, prepared);
@@ -571,7 +613,14 @@ export default function PaintCanvas({
               const adv = calcStreamAdvection(vel.vx, vel.vy, h, sRef.current.pendulum.stringLength, flow);
               const lx = (0.5 + (pos.x + adv.dx) * SCALE + co.ox) * display.width;
               const ly = (0.5 + (pos.y + adv.dy) * SCALE + co.oy) * display.height;
-              const streamW = Math.max(bobR * 0.18, 1.5);
+              // Stream thins as the Torricelli flow dies with the paint level,
+              // and breaks into dashes when the starving jet sputters into
+              // drops (Plateau–Rayleigh) — the overlay mirrors what the paint
+              // on the canvas is doing. Display-only.
+              const normFlow = Math.min(flow / 5, 1);
+              const starve = calcStreamBreakup(normFlow, ps.viscosity);
+              const streamW = Math.max(bobR * 0.22 * (0.35 + normFlow * 0.65), 1.2);
+              if (starve > 0) ctx.setLineDash([streamW * 2.2, streamW * (1.2 + starve * 3)]);
               ctx.lineCap = 'round';
               ctx.strokeStyle = bobColor;
               ctx.globalAlpha = 0.28;
@@ -586,6 +635,7 @@ export default function PaintCanvas({
               ctx.moveTo(ix, iy);
               ctx.lineTo(lx, ly);
               ctx.stroke();
+              ctx.setLineDash([]);
               // Impact point where the paint meets the canvas.
               ctx.globalAlpha = 0.5;
               ctx.fillStyle = bobColor;

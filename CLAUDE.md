@@ -51,7 +51,8 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
 - The dense center that appears late in a run is the pendulum settling (physically real); control
   its size with damping (ends the run sooner). bucketCapacity DOES bind for the heavier presets
   (measured 2026-07: Kaotisk/Galakse/Regnbue end by empty bucket; Rosett bottoms out at
-  paintLevel 0.076) — Torricelli flow slows the drain but does not stop it.
+  paintLevel 0.076) — Torricelli flow slows the drain but does not stop it. If the swing dies
+  with paint LEFT, the remainder drains into a terminal pool at the rest point (see §6 sluttpøl).
 - **Plateau–Rayleigh sputter (2026-07):** a starving stream (bucket almost empty) breaks into
   drops instead of stopping dead. `calcStreamBreakup(normFlow, viscosity)` in `physics.ts` returns
   starvation 0–1 (onset `0.14 + (1−viscosity)·0.08`; viscous paint holds a thread longer); the
@@ -236,6 +237,26 @@ dot, plus airborne splash droplets as tiny flecks with a soft shadow beneath. Ma
 lag legible live: you SEE the paint land ahead of the bucket. Hidden with `showRig` off; drawn
 only while paint remains (`paintLevel > 0`). Zero WYSIWYG/determinism impact (display canvas
 only; it IS captured in video recordings like the rest of the rig — intentional).
+· terminal sluttpøl (2026-07): a run that ends by SETTLING (isSimulationDone) with paint left now
+drains the rest into a puddle at the rest point — the bucket hangs still and empties straight
+down, like a real piece left to finish on its own. `calcEndPoolRadius(paintLevel, capacity,
+holeCount, viscosity)` in `physics.ts` (r ∝ √remaining volume; watery paint spreads wider; cap
+0.028; `END_POOL_MIN_RADIUS = 0.002` normalized — resolution-independent, never a pixel floor);
+`drawEndPool` in `painter.ts` (deterministic via point seed: opaque lobed body, coffee-ring rim,
+wet sheen; relief shadow rng-FREE). ONE stored `isPool`-point per hole, deposited AFTER
+`landRemainingParticles` (the pool drains last → stored last → live draw order matches the export
+replay). rng-FREE in the run loop — only the plain `nextSeed()` counter after the last stroke —
+so every earlier point/pixel is untouched. Runs that end by EMPTY bucket, MAX_POINTS, or the user
+stopping by hand ("lifting the bucket away") get NO pool. QA 2026-07: Kaotisk/Galakse/Regnbue
+(end by empty bucket) byte-identical to pre-feature; the six settle-enders (Default 0.874 paint
+left, Rosett 0.076, Organisk 0.174, Geometrisk 0.408, Zen 0.898, Blomst 0.480) gained a modest
+center pool (+1 point per hole) and the 5 picker thumbnails were regenerated; determinism PASS.
+**The headless QA sim must mirror this:** emit pool points only on settle-end, after the loop,
+with the nextSeed counter continuing.
+· rigg-strålen speiler flowen (2026-07, display-only): the stream streak in the rig overlay now
+thins with the Torricelli flow (`normFlow`) and is drawn DASHED while `calcStreamBreakup` says
+the starving jet sputters — the overlay shows what the paint on the canvas is doing. Zero
+WYSIWYG/determinism impact.
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
