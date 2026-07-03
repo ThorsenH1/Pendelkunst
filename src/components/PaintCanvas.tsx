@@ -398,9 +398,10 @@ export default function PaintCanvas({
         const normFlow = Math.min(flowRate / 5, 1);
 
         // Ballistic stream lag: the falling paint keeps the bucket's horizontal
-        // velocity, so it lands ahead of the bucket — never straight below it.
+        // velocity AND leaves the tilted outlet slanted outward, so it lands
+        // ahead of the bucket and slightly outside it — never straight below.
         // rng-FREE, baked into the stored point coordinates (WYSIWYG for free).
-        const adv = calcStreamAdvection(vel.vx, vel.vy, zHeight, s.pendulum.stringLength, flowRate);
+        const adv = calcStreamAdvection(vel.vx, vel.vy, zHeight, s.pendulum.stringLength, flowRate, pos.x, pos.y);
         const cx = 0.5 + (pos.x + adv.dx) * SCALE + co.ox;
         const cy = 0.5 + (pos.y + adv.dy) * SCALE + co.oy;
 
@@ -610,7 +611,7 @@ export default function PaintCanvas({
             if (pl > 0) {
               const vel = calcVelocity(tRef.current, prepared);
               const flow = calcPaintFlowRate(0, ps.viscosity, pl);
-              const adv = calcStreamAdvection(vel.vx, vel.vy, h, sRef.current.pendulum.stringLength, flow);
+              const adv = calcStreamAdvection(vel.vx, vel.vy, h, sRef.current.pendulum.stringLength, flow, pos.x, pos.y);
               const lx = (0.5 + (pos.x + adv.dx) * SCALE + co.ox) * display.width;
               const ly = (0.5 + (pos.y + adv.dy) * SCALE + co.oy) * display.height;
               // Stream thins as the Torricelli flow dies with the paint level,
@@ -755,7 +756,7 @@ export default function PaintCanvas({
       const p = calcPosition(t, prepared);
       const v = calcVelocity(t, prepared);
       const zh = calcBobHeight(p.x, p.y, settings.pendulum.stringLength);
-      const adv = calcStreamAdvection(v.vx, v.vy, zh, settings.pendulum.stringLength, exitSpeed);
+      const adv = calcStreamAdvection(v.vx, v.vy, zh, settings.pendulum.stringLength, exitSpeed, p.x, p.y);
       pts.push(`${((0.5 + (p.x + adv.dx) * SCALE) * canvasSize).toFixed(1)},${((0.5 + (p.y + adv.dy) * SCALE) * canvasSize).toFixed(1)}`);
     }
     // First loops drawn stronger than the rest: start point and direction read clearly.

@@ -282,20 +282,35 @@ const STREAM_GAP = 0.1;
 /** Cap on the extra fall height from the swing arc (m) — real painters keep the
  *  rig low; without a cap wide throws on long strings overshoot the canvas. */
 const SWING_RISE_MAX = 0.25;
+/** Tilted-outlet spread: the bucket hangs ALONG the string, so the jet leaves
+ *  the hole slanted — its horizontal component points radially OUTWARD (away
+ *  from the pivot) with magnitude exitSpeed·sin(swing angle). 0.2 calibrates
+ *  the model's exaggerated Torricelli head (≈1 m of paint) down to a real
+ *  bucket's, so the drift stays a gentle ~2% of the canvas at full flow. */
+const TILT_SPREAD = 0.2;
+/** Cap on the outward drift per unit displacement — extreme manual setups
+ *  (short string, far drop, watery paint) must not spray off the canvas. */
+const TILT_MAX = 0.12;
 
 /** Landing offset of the falling stream (physics units — caller applies SCALE).
- *  `zHeight` is calcBobHeight's normalized rise (r²/L); the real rise is r²/2L. */
+ *  `zHeight` is calcBobHeight's normalized rise (r²/L); the real rise is r²/2L.
+ *  `x, y` = bob displacement from center: a full bucket's slanted jet pushes the
+ *  outer loops outward (∝ r and the Torricelli flow), the dying flow doesn't. */
 export function calcStreamAdvection(
   vx: number,
   vy: number,
   zHeight: number,
   stringLength: number,
   exitSpeed: number,
+  x = 0,
+  y = 0,
 ): { dx: number; dy: number } {
   const h = STREAM_GAP + Math.min(zHeight * stringLength * 0.5, SWING_RISE_MAX);
   // h = v₀t + ½gt² → t = (√(v₀² + 2gh) − v₀)/g, v₀ = downward exit speed.
   const tFall = (Math.sqrt(exitSpeed * exitSpeed + 2 * G * h) - exitSpeed) / G;
-  return { dx: vx * tFall, dy: vy * tFall };
+  // sin(swing angle) ≈ r/L → outward drift = exitSpeed·(r/L)·tFall, per unit r.
+  const tilt = Math.min(TILT_SPREAD * exitSpeed * tFall / stringLength, TILT_MAX);
+  return { dx: vx * tFall + x * tilt, dy: vy * tFall + y * tilt };
 }
 
 // ── Terminal drain pool ──

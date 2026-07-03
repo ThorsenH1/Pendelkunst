@@ -62,7 +62,7 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
   the flat solid fields in the dense center into granular drip texture (see the changed presets).
 - **Ballistic stream lag (2026-07):** the falling paint keeps the bucket's horizontal velocity,
   so it lands AHEAD of the bucket — never straight below the hole. `calcStreamAdvection(vx, vy,
-  zHeight, L, exitSpeed)` in `physics.ts`: fall height = `STREAM_GAP` (0.10 m outlet height) +
+  zHeight, L, exitSpeed, x, y)` in `physics.ts`: fall height = `STREAM_GAP` (0.10 m outlet height) +
   swing-arc rise (`zHeight·L/2`, capped 0.25 m); fall time shortened by the downward Torricelli
   exit speed (full bucket squirts fast → lands almost beneath the hole; a starving/viscous stream
   drifts further). Applied once per step in PaintCanvas BEFORE the hole loop
@@ -71,6 +71,16 @@ requires the initial perpendicular velocity to be on the order of `ω·r` (a fac
   velocity-dependent sweep/twist of the whole pattern; the rig bob deliberately stays at the TRUE
   bob position, so live you see the paint land ahead of the bucket. The orbit path preview applies
   the same advection (full-bucket exit-speed approximation) so it shows where the PAINT goes.
+- **Tilted-outlet spread (2026-07):** the bucket hangs ALONG the string, so the jet leaves the
+  hole slanted — its horizontal component points radially OUTWARD (away from the pivot) with
+  magnitude `exitSpeed·sin(swing angle)`. The `x, y` params of `calcStreamAdvection` (bob
+  displacement) add `x·tilt, y·tilt` with `tilt = min(TILT_SPREAD·exitSpeed·tFall/L, TILT_MAX)`
+  (`TILT_SPREAD = 0.2` calibrates the model's exaggerated ~1 m Torricelli head down to a real
+  bucket's; `TILT_MAX = 0.12` keeps extreme manual setups — short string, far drop — on the
+  canvas). Effect: a FULL bucket pushes the outer loops ~2% of the canvas outward; the drift dies
+  with the flow (∝ exitSpeed·tFall) and with r, so the dense center and the terminal pool are
+  untouched. rng-FREE, baked into stored coordinates → WYSIWYG free. All three call sites pass
+  the bob position (run loop, rig-overlay stream, orbit preview) — keep them in sync.
 - `calcBobHeight` must depend on L (longer string → smaller swing angle → flatter arc → less spread).
 
 ## 3. WYSIWYG export — the core invariant (READ BEFORE TOUCHING `painter.ts`)
@@ -257,6 +267,14 @@ with the nextSeed counter continuing.
 thins with the Torricelli flow (`normFlow`) and is drawn DASHED while `calcStreamBreakup` says
 the starving jet sputters — the overlay shows what the paint on the canvas is doing. Zero
 WYSIWYG/determinism impact.
+· tilted-outlet spread (2026-07, see §2): the slanted jet from the string-aligned bucket pushes
+the outer loops outward while the bucket is full; the drift dies with the flow and with r.
+Affects every preset (no byte-identical baseline) — QA was before/after montage comparison:
+all 9 renders round & canvas-filling, point counts ±0.1% (endReasons unchanged; the baseline sim
+reproduced the documented 2026-07 numbers exactly — Kaotisk ≈778k/empty, Rosett rest 0.076,
+Zen 0.898 …), same-seed/diff-seed determinism PASS; ALL 8 picker thumbnails regenerated in the
+same pass. **The headless QA sim must pass `pos.x, pos.y` to `calcStreamAdvection`** exactly
+like the run loop does — omitting them silently reverts to the pre-tilt pattern.
 
 Remaining:
 1. **i18n** (English toggle) to widen reach.
