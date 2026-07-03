@@ -305,10 +305,12 @@ export default function PaintCanvas({
       const shadowOn = s.paintShadow === true;
 
       // When the run ends, any droplet still in the air lands NOW — the live
-      // canvas must show every splat the export will replay.
+      // canvas must show every splat the export will replay. Each droplet lands
+      // with its LAUNCH-time paint state (the values the stored point carries),
+      // not the current slider values — the export replays exactly that.
       const landRemainingParticles = () => {
-        const drag = splashDrag(ps.viscosity);
         for (const p of particles.current) {
+          const drag = splashDrag(p.viscosity);
           while (p.life > 0) {
             p.x += p.vx; p.y += p.vy;
             p.vy += SPLASH_GRAVITY;
@@ -316,17 +318,17 @@ export default function PaintCanvas({
             p.vy *= drag;
             p.life -= p.decay;
           }
+          paintCtx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
           const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, p.sym ?? sym);
           for (let i = 0; i < copies.length; i++) {
-            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, p.opacity, p.vx, p.vy, p.viscosity, copySeed(p.seed, i), p.shadow === true);
           }
         }
         particles.current = [];
+        paintCtx.globalCompositeOperation = 'source-over';
       };
       const finishRun = () => {
-        paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
         landRemainingParticles();
-        paintCtx.globalCompositeOperation = 'source-over';
         cbRef.current('done');
       };
 
@@ -464,6 +466,10 @@ export default function PaintCanvas({
                   radius: splashR, color: hole.color, life: 1,
                   decay: 0.015 + rng() * 0.05 + ps.viscosity * 0.03,
                   seed: nextSeed(),
+                  opacity: ps.opacity,
+                  viscosity: ps.viscosity,
+                  blend: wet || undefined,
+                  shadow: shadowOn || undefined,
                   sym,
                 };
                 particles.current.push(particle);
@@ -493,9 +499,10 @@ export default function PaintCanvas({
 
         // Droplets fly through the AIR (invisible — the bucket hangs above the
         // canvas) and leave one opaque splat where they land. Integration is
-        // EXACTLY what the export replays (shared SPLASH_GRAVITY / splashDrag).
-        const drag = splashDrag(ps.viscosity);
+        // EXACTLY what the export replays (shared SPLASH_GRAVITY / splashDrag),
+        // so both drag and the splat use the droplet's LAUNCH-time paint state.
         particles.current = particles.current.filter(p => {
+          const drag = splashDrag(p.viscosity);
           p.x += p.vx; p.y += p.vy;
           p.vy += SPLASH_GRAVITY;
           p.vx *= drag;
@@ -503,10 +510,12 @@ export default function PaintCanvas({
           p.life -= p.decay;
           if (p.life > 0) return true;
           // Landed: splat.
+          paintCtx.globalCompositeOperation = p.blend ? 'multiply' : 'source-over';
           const copies = getSymmetryTransforms(p.x * PAINT_SIZE, p.y * PAINT_SIZE, PAINT_SIZE, p.sym ?? sym);
           for (let i = 0; i < copies.length; i++) {
-            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, ps.opacity, p.vx, p.vy, ps.viscosity, copySeed(p.seed, i), shadowOn);
+            drawSplashSplat(paintCtx, copies[i].x, copies[i].y, p.radius * PAINT_SIZE, p.color, p.opacity, p.vx, p.vy, p.viscosity, copySeed(p.seed, i), p.shadow === true);
           }
+          paintCtx.globalCompositeOperation = wet ? 'multiply' : 'source-over';
           return false;
         });
 
@@ -526,6 +535,7 @@ export default function PaintCanvas({
 
           const ix = (0.5 + pos.x * SCALE + co.ox) * display.width;
           const iy = (0.5 + pos.y * SCALE + co.oy) * display.height;
+          const pl = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
 
           if (sRef.current.showRig !== false) {
             // Pendulum rig seen from above: pivot at center, string to the bob,
@@ -550,6 +560,57 @@ export default function PaintCanvas({
             ctx.moveTo(cx, cy);
             ctx.lineTo(ix, iy);
             ctx.stroke();
+
+            // Falling paint stream, seen from above: the jet keeps the bucket's
+            // horizontal velocity and lands AHEAD of it (ballistic stream lag) —
+            // draw the streak from the outlet to the landing point so the lag
+            // reads live. Same advection as the physics; display-only overlay.
+            if (pl > 0) {
+              const vel = calcVelocity(tRef.current, prepared);
+              const flow = calcPaintFlowRate(0, ps.viscosity, pl);
+              const adv = calcStreamAdvection(vel.vx, vel.vy, h, sRef.current.pendulum.stringLength, flow);
+              const lx = (0.5 + (pos.x + adv.dx) * SCALE + co.ox) * display.width;
+              const ly = (0.5 + (pos.y + adv.dy) * SCALE + co.oy) * display.height;
+              const streamW = Math.max(bobR * 0.18, 1.5);
+              ctx.lineCap = 'round';
+              ctx.strokeStyle = bobColor;
+              ctx.globalAlpha = 0.28;
+              ctx.lineWidth = streamW * 2;
+              ctx.beginPath();
+              ctx.moveTo(ix, iy);
+              ctx.lineTo(lx, ly);
+              ctx.stroke();
+              ctx.globalAlpha = 0.7;
+              ctx.lineWidth = streamW;
+              ctx.beginPath();
+              ctx.moveTo(ix, iy);
+              ctx.lineTo(lx, ly);
+              ctx.stroke();
+              // Impact point where the paint meets the canvas.
+              ctx.globalAlpha = 0.5;
+              ctx.fillStyle = bobColor;
+              ctx.beginPath();
+              ctx.arc(lx, ly, streamW * 1.1, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Splash droplets mid-air: tiny flecks with a faint shadow beneath,
+            // so you SEE the paint fly before each splat appears.
+            for (const p of particles.current) {
+              const dxp = p.x * display.width;
+              const dyp = p.y * display.height;
+              const dr = Math.max(p.radius * display.width, 1.2);
+              ctx.globalAlpha = 0.14;
+              ctx.fillStyle = '#000';
+              ctx.beginPath();
+              ctx.arc(dxp + dr * 0.8, dyp + dr * 1.3, dr * 0.9, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 0.9;
+              ctx.fillStyle = p.color;
+              ctx.beginPath();
+              ctx.arc(dxp, dyp, dr, 0, Math.PI * 2);
+              ctx.fill();
+            }
 
             // Pivot marker
             ctx.globalAlpha = 0.5;
@@ -591,7 +652,6 @@ export default function PaintCanvas({
             ctx.stroke();
           }
 
-          const pl = calcPaintLevel(totalFlow.current, ps.holes.length, ps.bucketCapacity);
           const bw = 4, bh = 50, bx = display.width - 16, by = 12;
           ctx.globalAlpha = 0.25;
           ctx.fillStyle = '#fff';

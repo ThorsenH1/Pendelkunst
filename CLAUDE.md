@@ -221,6 +221,22 @@ with `exitSpeed = flowRate` — a mismatch shifts every stroke. The orbit previe
 `calcPaintFlowRate(0, viscosity, 1)` as its exit-speed approximation; keep that in sync if the
 flow model changes.
 
+· splash lands with LAUNCH-time paint state (2026-07): `SplashParticle` now carries
+`opacity/viscosity/blend/shadow` from the moment the droplet leaves the stream, and both landing
+paths in PaintCanvas (in-flight filter loop + `landRemainingParticles`) use those instead of the
+CURRENT slider values — including per-particle `splashDrag(p.viscosity)`, which sets WHERE the
+droplet lands. Before this, moving the opacity/viscosity sliders (or toggling wet/shadow) while
+droplets were mid-air made the live splat differ from what the export replays from the stored
+point. No pixel change when settings are constant during a run (verified: transpiled lib
+byte-identical to HEAD, montage QA + determinism PASS — presets never move sliders mid-run).
+· live paint-stream overlay (2026-07, display-only): the rig now draws the falling paint stream —
+a streak in the bob color from the outlet to the ballistically-advected landing point (same
+`calcStreamAdvection`, exit speed `calcPaintFlowRate(0, viscosity, paintLevel)`) with an impact
+dot, plus airborne splash droplets as tiny flecks with a soft shadow beneath. Makes the stream
+lag legible live: you SEE the paint land ahead of the bucket. Hidden with `showRig` off; drawn
+only while paint remains (`paintLevel > 0`). Zero WYSIWYG/determinism impact (display canvas
+only; it IS captured in video recordings like the rest of the rig — intentional).
+
 Remaining:
 1. **i18n** (English toggle) to widen reach.
 2. Replace `MAX_POINTS` hard stop with graceful densification (decimate older points) for very long runs.
@@ -244,6 +260,17 @@ Remaining:
   Render all 8 presets + Default in a montage and eyeball that they fill the canvas like real
   pendulum art before shipping. The same pipeline regenerates the preset picker thumbnails
   (480px render → 240px webp q82 → `public/presets/<slug>.webp`) — do that in the same pass.
+- **QA point counts are script-sensitive:** historical absolutes in this file (e.g. "Kaotisk
+  ≈778k") were measured by earlier sessions' sim scripts; a faithful re-implementation measured
+  Kaotisk ≈660k (2026-07-03) with determinism PASS and correct-looking renders. Compare
+  before/after within the SAME session/script (or better: transpile lib from HEAD and diff-hash —
+  type-only changes are provably byte-identical); don't chase historical point counts.
+- **Verifying the LIVE loop in the headless browser preview:** `preview_screenshot` times out and
+  `requestAnimationFrame` never fires in the background preview tab, so the sim never advances.
+  Workaround via `preview_eval`: shim `window.requestAnimationFrame = cb => setTimeout(() => cb(performance.now()), 16)`
+  (+ cancel→clearTimeout), then click Pause→Fortsett to reschedule the loop on the shim, await a
+  few seconds INSIDE the eval (async IIFE), and verify by reading canvas pixels / `toDataURL`
+  (large data-URLs land in a tool-results file — strip quotes, base64-decode, view the PNG).
 - **Multiline/quoted commit messages fail in Windows PowerShell 5.1** (embedded `"` splits the
   `-m` argument into pathspecs even inside a here-string). Write the message to a scratch file
   and run `git commit -F <file>` from Git Bash instead.

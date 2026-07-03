@@ -137,6 +137,14 @@ export interface SplashParticle {
   decay: number;
   /** Stable seed for this particle's deterministic appearance. */
   seed: number;
+  /** Paint state at LAUNCH. The export replays the flight and splat from the stored
+   *  point's launch-time values, so the live landing must use the same ones — even if
+   *  the user moves the opacity/viscosity sliders while the droplet is mid-air.
+   *  (Viscosity also sets the air drag, i.e. WHERE the droplet lands.) */
+  opacity: number;
+  viscosity: number;
+  blend?: boolean;
+  shadow?: boolean;
   /** Symmetry at launch — the landing splat must use the SAME symmetry as the stored
    *  point, even if the user changes symmetry while the droplet is mid-air. */
   sym?: SymmetrySettings;
